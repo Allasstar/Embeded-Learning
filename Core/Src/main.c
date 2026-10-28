@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
+#include "app.h"
 
 /* USER CODE END Includes */
 
@@ -33,12 +33,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-// DEBUG_LOG_ENABLED comes from CMakeLists.txt (Debug config only); in Release, LOG compiles to nothing
-#ifdef DEBUG_LOG_ENABLED
-#define LOG(...) printf(__VA_ARGS__)
-#else
-#define LOG(...) ((void)0)
-#endif
 
 /* USER CODE END PD */
 
@@ -55,10 +49,7 @@ I2S_HandleTypeDef hi2s3;
 SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
-static uint16_t ledPins[] = { LD4_Pin, LD3_Pin, LD5_Pin, LD6_Pin };
-static uint8_t ledIndex = 0;
-static GPIO_PinState lastButton = GPIO_PIN_RESET;
-static uint32_t lastTick = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,51 +66,6 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#ifdef DEBUG_LOG_ENABLED
-static int SemihostCall(int op, void *args)
-{
-  register int r0 __asm("r0") = op;
-  register void *r1 __asm("r1") = args;
-  __asm volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
-
-// Overrides the weak _write in syscalls.c; sending the whole buffer in one
-// call avoids the console putting every character on its own line
-int _write(int file, char *ptr, int len)
-{
-  // Semihosting BKPT HardFaults when no debugger is attached
-  if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) == 0)
-    return len;
-
-  static int stdoutHandle = -1;
-  if (stdoutHandle < 0)
-  {
-    // SYS_OPEN (0x01) of ":tt" in mode 4 ("w") is how newlib's rdimon gets the host console
-    static const char tt[] = ":tt";
-    int openArgs[3] = { (int)tt, 4, 3 };
-    stdoutHandle = SemihostCall(0x01, openArgs);
-  }
-
-  // SYS_WRITE (0x05) returns the number of bytes NOT written
-  int writeArgs[3] = { stdoutHandle, (int)ptr, len };
-  return len - SemihostCall(0x05, writeArgs);
-}
-
-// syscalls.c declares __io_putchar weak; without a definition, code that calls it jumps to address 0 and HardFaults
-int __io_putchar(int ch)
-{
-  char c = (char)ch;
-  _write(1, &c, 1);
-  return ch;
-}
-#else
-// Must not call _write here: in Release the weak _write in syscalls.c calls __io_putchar, which would recurse forever
-int __io_putchar(int ch)
-{
-  return ch;
-}
-#endif
 
 /* USER CODE END 0 */
 
@@ -157,7 +103,7 @@ int main(void)
   MX_SPI1_Init();
   MX_USB_HOST_Init();
   /* USER CODE BEGIN 2 */
-
+  App_Start();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -167,39 +113,8 @@ int main(void)
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
 
-
     /* USER CODE BEGIN 3 */
-    // Toggle LD4
-
-    GPIO_PinState button = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
-
-    uint32_t tick = HAL_GetTick();
-
-    if(tick - lastTick >= 20)
-    {
-      lastTick = tick;
-
-      if(button == GPIO_PIN_SET && lastButton == GPIO_PIN_RESET)
-      {
-        uint8_t size = sizeof(ledPins) / sizeof(ledPins[0]);
-        ledIndex = (ledIndex + 1) % size;
-        LOG("ledIndex = %d\n", ledIndex);
-
-        for (uint8_t i = 0; i < size; i++)
-        {
-            HAL_GPIO_WritePin(GPIOD, ledPins[i], GPIO_PIN_RESET);
-        }
-      }
-      lastButton = button;
-
-    }
-
-    if (tick % 1000 < 500)
-        HAL_GPIO_WritePin(GPIOD, ledPins[ledIndex], GPIO_PIN_SET);
-      else
-        HAL_GPIO_WritePin(GPIOD, ledPins[ledIndex], GPIO_PIN_RESET);
-
-
+    App_Update();
   }
   /* USER CODE END 3 */
 }
