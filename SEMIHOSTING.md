@@ -109,8 +109,8 @@ Select the **Debug** CMake preset. Release builds with `-g0`, which strips debug
 ## 3. Usage
 
 ```c
-printf("Toggling LD4\n");
-printf("counter = %d\n", counter);
+LOG("Toggling LD4\n");
+LOG("counter = %d\n", counter);
 ```
 
 1. Press **F5** (Run and Debug → *STM32Cube: Launch ST-Link GDB Server*).
@@ -146,7 +146,68 @@ End messages with `\n`. `stdout` is line-buffered, so text without a newline sta
 
 ---
 
-## 6. Limitations
+## 6. Disabling it in production (Release)
+
+Logging is compiled in only for the **Debug** CMake config.
+
+`CMakeLists.txt` defines `DEBUG_LOG_ENABLED` for Debug builds only:
+
+```cmake
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    $<$<CONFIG:Debug>:DEBUG_LOG_ENABLED>
+)
+```
+
+`main.c` routes logging through a macro:
+
+```c
+/* USER CODE BEGIN PD */
+#ifdef DEBUG_LOG_ENABLED
+#define LOG(...) printf(__VA_ARGS__)
+#else
+#define LOG(...) ((void)0)
+#endif
+/* USER CODE END PD */
+```
+
+and wraps the semihosting code:
+
+```c
+#ifdef DEBUG_LOG_ENABLED
+// SemihostCall, _write, __io_putchar (section 2.1)
+#else
+int __io_putchar(int ch)
+{
+  return ch;
+}
+#endif
+```
+
+Rules:
+
+- Always log with `LOG(...)`, never `printf` directly. In Release, `LOG` calls disappear completely: no `bkpt`, no CPU stalls, and newlib's `printf` isn't linked (saves several KB of flash).
+- The Release `__io_putchar` must **not** call `_write`. In Release the weak `_write` from `syscalls.c` is used, and it calls `__io_putchar`, so they would call each other forever.
+- Arguments inside `LOG(...)` aren't evaluated in Release, so don't put side effects in them (`LOG("%d", i++)`).
+
+### Switching between Debug and Release
+
+The Run and Debug dropdown is **not** where you pick it; that only chooses the launch configuration. Use the CMake extension:
+
+- **CMake sidebar**: CMake icon in the activity bar → *Project Status* → *Configure* → click the preset → **Debug** or **Release**. Set *Build* to the same preset.
+- **Command Palette** (`Ctrl+Shift+P`): `CMake: Select Configure Preset`, then `CMake: Select Build Preset`.
+
+F5 then builds the active preset (the `preBuild` step in `launch.json`) and flashes it.
+
+| Preset | `LOG` output | Breakpoints / stepping | Use for |
+|---|---|---|---|
+| Debug | Yes (STM32Cube TCP Console) | Yes (`-O0 -g3`) | Development |
+| Release | Compiled out | No (`-Os -g0`) | Production firmware |
+
+Check that Release really dropped it with the map file (`build/Release/Test_DISC1.map`): it shouldn't contain `_printf_i` / `_vfprintf_r`.
+
+---
+
+## 7. Limitations
 
 - **Slow**: every `printf` halts the core while the PC handles it (around milliseconds). Don't print in tight loops or interrupts, and expect timing-sensitive code (USB, audio) to misbehave while printing.
 - **Debugger only**: without a debug session the output is discarded.

@@ -33,6 +33,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// DEBUG_LOG_ENABLED comes from CMakeLists.txt (Debug config only); in Release, LOG compiles to nothing
+#ifdef DEBUG_LOG_ENABLED
+#define LOG(...) printf(__VA_ARGS__)
+#else
+#define LOG(...) ((void)0)
+#endif
 
 /* USER CODE END PD */
 
@@ -66,6 +72,7 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#ifdef DEBUG_LOG_ENABLED
 static int SemihostCall(int op, void *args)
 {
   register int r0 __asm("r0") = op;
@@ -103,6 +110,13 @@ int __io_putchar(int ch)
   _write(1, &c, 1);
   return ch;
 }
+#else
+// Must not call _write here: in Release the weak _write in syscalls.c calls __io_putchar, which would recurse forever
+int __io_putchar(int ch)
+{
+  return ch;
+}
+#endif
 
 /* USER CODE END 0 */
 
@@ -153,7 +167,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     // Toggle LD4
-    printf("Toggling LD4\n");
+    LOG("Toggling LD4\n");
     HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
     HAL_Delay(500);
 
