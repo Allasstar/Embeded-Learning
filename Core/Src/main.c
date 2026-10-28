@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -65,6 +66,24 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// syscalls.c declares __io_putchar weak; without a definition printf jumps to address 0 and HardFaults
+int __io_putchar(int ch)
+{
+  // Semihosting BKPT HardFaults when no debugger is attached
+  if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) == 0)
+    return ch;
+
+  char c = (char)ch;
+  // SYS_WRITEC (0x03): debugger prints the char pointed to by r1
+  __asm volatile(
+    "mov r0, #3\n"
+    "mov r1, %0\n"
+    "bkpt 0xAB\n"
+    :
+    : "r"(&c)
+    : "r0", "r1", "memory");
+  return ch;
+}
 
 /* USER CODE END 0 */
 
@@ -112,7 +131,13 @@ int main(void)
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
 
+
     /* USER CODE BEGIN 3 */
+    // Toggle LD4
+    printf("Toggling LD4\n");
+    HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+    HAL_Delay(500);
+
   }
   /* USER CODE END 3 */
 }
