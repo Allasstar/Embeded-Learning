@@ -55,7 +55,10 @@ I2S_HandleTypeDef hi2s3;
 SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
-
+static uint16_t ledPins[] = { LD4_Pin, LD3_Pin, LD5_Pin, LD6_Pin };
+static uint8_t ledIndex = 0;
+static GPIO_PinState lastButton = GPIO_PIN_RESET;
+static uint32_t lastTick = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -167,9 +170,35 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     // Toggle LD4
-    LOG("Toggling LD4\n");
-    HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-    HAL_Delay(500);
+
+    GPIO_PinState button = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
+
+    uint32_t tick = HAL_GetTick();
+
+    if(tick - lastTick >= 20)
+    {
+      lastTick = tick;
+
+      if(button == GPIO_PIN_SET && lastButton == GPIO_PIN_RESET)
+      {
+        uint8_t size = sizeof(ledPins) / sizeof(ledPins[0]);
+        ledIndex = (ledIndex + 1) % size;
+        LOG("ledIndex = %d\n", ledIndex);
+
+        for (uint8_t i = 0; i < size; i++)
+        {
+            HAL_GPIO_WritePin(GPIOD, ledPins[i], GPIO_PIN_RESET);
+        }
+      }
+      lastButton = button;
+
+    }
+
+    if (tick % 1000 < 500)
+        HAL_GPIO_WritePin(GPIOD, ledPins[ledIndex], GPIO_PIN_SET);
+      else
+        HAL_GPIO_WritePin(GPIOD, ledPins[ledIndex], GPIO_PIN_RESET);
+
 
   }
   /* USER CODE END 3 */
