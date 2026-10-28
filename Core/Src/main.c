@@ -66,22 +66,41 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-// syscalls.c declares __io_putchar weak; without a definition printf jumps to address 0 and HardFaults
-int __io_putchar(int ch)
+static int SemihostCall(int op, void *args)
+{
+  register int r0 __asm("r0") = op;
+  register void *r1 __asm("r1") = args;
+  __asm volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
+  return r0;
+}
+
+// Overrides the weak _write in syscalls.c; sending the whole buffer in one
+// call avoids the console putting every character on its own line
+int _write(int file, char *ptr, int len)
 {
   // Semihosting BKPT HardFaults when no debugger is attached
   if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) == 0)
-    return ch;
+    return len;
 
+  static int stdoutHandle = -1;
+  if (stdoutHandle < 0)
+  {
+    // SYS_OPEN (0x01) of ":tt" in mode 4 ("w") is how newlib's rdimon gets the host console
+    static const char tt[] = ":tt";
+    int openArgs[3] = { (int)tt, 4, 3 };
+    stdoutHandle = SemihostCall(0x01, openArgs);
+  }
+
+  // SYS_WRITE (0x05) returns the number of bytes NOT written
+  int writeArgs[3] = { stdoutHandle, (int)ptr, len };
+  return len - SemihostCall(0x05, writeArgs);
+}
+
+// syscalls.c declares __io_putchar weak; without a definition, code that calls it jumps to address 0 and HardFaults
+int __io_putchar(int ch)
+{
   char c = (char)ch;
-  // SYS_WRITEC (0x03): debugger prints the char pointed to by r1
-  __asm volatile(
-    "mov r0, #3\n"
-    "mov r1, %0\n"
-    "bkpt 0xAB\n"
-    :
-    : "r"(&c)
-    : "r0", "r1", "memory");
+  _write(1, &c, 1);
   return ch;
 }
 
