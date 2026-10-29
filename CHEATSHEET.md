@@ -4,6 +4,98 @@ Quick reference for pins, LEDs, buttons and peripherals in this project (STM32F4
 
 ---
 
+## 0. Glossary
+
+### Port and Pin: what `LD4_GPIO_Port` / `LD4_Pin` really are
+
+The MCU's pins are grouped into **ports** of 16 pins each: `GPIOA`, `GPIOB` … `GPIOI`. A pin name like **PD12** means *Port D, pin 12*.
+
+CubeMX writes these into `main.h` from the user label `LD4`:
+```c
+#define LD4_Pin        GPIO_PIN_12   // which pin inside the port: a bit mask, 0x1000 (= 1 << 12)
+#define LD4_GPIO_Port  GPIOD         // which port: pointer to the GPIOD register block (0x40020C00)
+```
+
+So these three lines do exactly the same thing:
+```c
+HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_SET);    // by label (preferred)
+HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);        // by raw name
+GPIOD->BSRR = (1 << 12);                                    // by register
+```
+
+| | Port | Pin |
+|---|---|---|
+| Type | `GPIO_TypeDef *` (a struct of registers) | `uint16_t` bit mask |
+| Values | `GPIOA` … `GPIOI` | `GPIO_PIN_0` … `GPIO_PIN_15`, `GPIO_PIN_All` |
+| Combine? | no, one port per call | yes, OR them: `LD3_Pin \| LD4_Pin` (same port only) |
+
+Use the labels: if you move the LED to another pin in CubeMX, only `main.h` changes and your code still works.
+
+### Keywords
+
+| Term | Meaning |
+|---|---|
+| **MCU** | Microcontroller: CPU + flash + RAM + peripherals on one chip. Here the STM32F407VG. |
+| **Cortex-M4** | The ARM CPU core inside the STM32F407. |
+| **Peripheral** | A hardware block inside the MCU besides the CPU: GPIO, SPI, I2C, TIM, UART, ADC… |
+| **Register** | A memory address that controls hardware. Writing a bit there flips a real wire. |
+| **HAL** | *Hardware Abstraction Layer*, ST's C library (`HAL_*` functions) so you don't touch registers directly. Lives in `Drivers/STM32F4xx_HAL_Driver/`. |
+| **LL** | *Low-Layer* drivers: ST's thinner, faster alternative to HAL (`LL_*`). Not used here. |
+| **CMSIS** | ARM's standard headers: register names (`GPIOD->ODR`), `NVIC`, `__disable_irq()`. Lives in `Drivers/CMSIS/`. |
+| **BSP** | *Board Support Package*: drivers for a specific board's chips (accelerometer, audio). Not used here. |
+| **CubeMX** | ST's graphical configurator. Pick pins/clocks/peripherals, it generates the init code. |
+| **`.ioc`** | The CubeMX project file (`Test_DISC1.ioc`). The source of truth for pin setup. |
+| **User label** | Name you give a pin in CubeMX (`LD4`). Becomes `LD4_Pin` / `LD4_GPIO_Port`. |
+| **`MX_*_Init()`** | Init functions CubeMX generates (`MX_GPIO_Init`, `MX_SPI1_Init`). |
+| **MSP** | *MCU Support Package*: `stm32f4xx_hal_msp.c`, where CubeMX sets up pins/clocks a peripheral needs (`HAL_SPI_MspInit`). |
+| **GPIO** | *General-Purpose Input/Output*: a pin your code can drive HIGH/LOW or read. |
+| **HIGH / LOW** | 3.3 V / 0 V on a pin. In HAL: `GPIO_PIN_SET` / `GPIO_PIN_RESET`. |
+| **Push-pull** | Output actively drives both HIGH and LOW. The normal mode. |
+| **Open-drain** | Output can only pull LOW; HIGH needs a pull-up resistor. Used for shared lines (I2C). |
+| **Pull-up / pull-down** | Weak internal resistor holding an input HIGH / LOW when nothing drives it. |
+| **Floating** | Input with nothing driving it and no pull: reads random noise. |
+| **Active LOW** | Signal "on" when the wire is LOW (e.g. SPI CS). |
+| **AF (Alternate Function)** | Pin handed to a peripheral (SPI, TIM, UART) instead of plain GPIO. |
+| **Clock / RCC** | Every peripheral needs its clock enabled (`__HAL_RCC_xxx_CLK_ENABLE()`) or it's dead. RCC is the clock controller. |
+| **SYSCLK / HCLK / PCLK** | CPU clock (168 MHz), AHB bus clock, APB bus clocks (APB1 42 MHz, APB2 84 MHz). |
+| **SysTick** | ARM core timer firing every 1 ms; drives `HAL_GetTick()` and `HAL_Delay()`. |
+| **Tick** | One SysTick period = 1 ms here. |
+| **Handle** | Struct describing one peripheral instance (`hspi1`, `hi2c1`). Pass its address to HAL calls. |
+| **`HAL_StatusTypeDef`** | Return code: `HAL_OK`, `HAL_ERROR`, `HAL_BUSY`, `HAL_TIMEOUT`. |
+| **Blocking** | Function waits until the job is done (or times out) before returning. |
+| **Polling** | Checking a flag/pin repeatedly in the loop instead of using an interrupt. |
+| **Interrupt / IRQ** | Hardware event that pauses `main` and runs a handler immediately. |
+| **ISR / IRQHandler** | The function that runs on an interrupt (`EXTI0_IRQHandler` in `stm32f4xx_it.c`). |
+| **NVIC** | *Nested Vectored Interrupt Controller*: enables interrupts and sets their priorities. |
+| **EXTI** | *External Interrupt* controller: turns a pin edge into an interrupt. Line N = pin N of any port. |
+| **Edge** | Change of a signal: **rising** (LOW→HIGH) or **falling** (HIGH→LOW). |
+| **Event mode** | EXTI wakes the CPU but calls no handler. |
+| **Callback** | Function *you* write that HAL calls on an event (`HAL_GPIO_EXTI_Callback`). |
+| **`__weak`** | Default empty function that yours overrides if it has the exact same name. |
+| **`volatile`** | Tells the compiler a variable can change behind its back (ISR, hardware). Always use for ISR-shared flags. |
+| **Debounce** | Ignoring the few ms of on/off chatter a mechanical button produces. |
+| **DMA** | *Direct Memory Access*: hardware copies data between memory and a peripheral without the CPU. |
+| **Timer (TIM)** | Hardware counter. Base for delays, periodic interrupts, PWM, input capture. |
+| **Prescaler** | Divides the timer's input clock. `PSC = 84-1` → 84 MHz / 84 = 1 MHz. |
+| **Period (ARR)** | Value the timer counts to before restarting. Sets the overflow/PWM frequency. |
+| **PWM** | Pin toggled fast with a variable **duty cycle** (% of time HIGH). Dims LEDs, drives servos. |
+| **Compare (CCR)** | Timer value at which a PWM output switches; sets the duty cycle. |
+| **SPI** | Fast 4-wire bus: **SCK** clock, **MOSI** master-out, **MISO** master-in, **CS/NSS** chip select. |
+| **I2C** | 2-wire bus with addresses: **SCL** clock, **SDA** data. Open-drain, needs pull-ups. |
+| **I2S** | Audio variant of SPI for streaming samples. |
+| **UART / USART** | Serial port: **TX**, **RX**, agreed baud rate (e.g. 115200). |
+| **ADC** | *Analog-to-Digital Converter*: voltage 0–3.3 V → number 0–4095. |
+| **ODR / IDR / BSRR** | GPIO registers: Output Data, Input Data, Bit Set/Reset. |
+| **Flash** | Non-volatile memory where your program lives. "Flashing" = writing it there. |
+| **ST-LINK / SWD** | Debugger chip on the board and the 2-wire debug protocol it speaks to the MCU. |
+| **Semihosting** | Debug feature: `printf` output goes through the debugger to your PC (see `SEMIHOSTING.md`). |
+| **Linker script** | `STM32F407xx_FLASH.ld`: where code and data go in flash/RAM. |
+| **Startup file** | `startup_stm32f407xx.s`: vector table and reset code that runs before `main`. |
+| **Vector table** | List of handler addresses the CPU jumps to on reset and each interrupt. |
+| **NRST** | Reset pin (the black button). |
+
+---
+
 ## 1. The golden workflow
 
 Every hardware change follows the same loop:
@@ -341,7 +433,7 @@ Search tricks in VS Code:
 | `Timeout` | max wait in ms | `10`, or `HAL_MAX_DELAY` to wait forever |
 | `DevAddress` | I2C address, **8-bit form** (7-bit << 1) | `0x94` |
 
-### Cheatsheet (raylib style)
+### Cheatsheet
 
 `HAL_StatusTypeDef` return values: `HAL_OK`, `HAL_ERROR`, `HAL_BUSY`, `HAL_TIMEOUT`. Functions marked `[cb]` are callbacks: you write them and the HAL calls them.
 
