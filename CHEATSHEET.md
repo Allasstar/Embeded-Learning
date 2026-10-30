@@ -575,6 +575,65 @@ module: adc (stm32f4xx_hal_adc.h)  ->  enable e.g. ADC1 IN1 (PA1) first
 
 Signatures for system, GPIO, SPI, I2C and I2S are copied from this project's headers. TIM, UART and ADC are from the standard F4 HAL; their headers appear in `Drivers/` once you enable the peripheral.
 
+### What the parameters and types mean
+
+**Common types**
+
+| Type / param | What it is | Values |
+|---|---|---|
+| `HAL_StatusTypeDef` | result of a HAL call | `HAL_OK`, `HAL_ERROR`, `HAL_BUSY` (previous transfer still running), `HAL_TIMEOUT` |
+| `xxx_HandleTypeDef *` (`hspi`, `hi2c`, `hi2s`, `htim`, `huart`, `hadc`) | struct CubeMX creates for each peripheral: its registers, config and current state. Always pass its address | `&hspi1`, `&hi2c1`, `&hi2s3`, `&htim4`... |
+| `xxx_InitTypeDef *` | struct you fill in to configure something, then pass to an `_Init` function | see `GPIO_InitTypeDef` in section 12 |
+| `Timeout` | how long a blocking call waits before giving up with `HAL_TIMEOUT`, in ms | `10`, `100`, `HAL_MAX_DELAY` (wait forever) |
+| `pData`, `pTxData`, `pRxData` | pointer to your buffer: data to send or where to store received data | `buffer`, `&value` |
+| `Size` | how many items to send/receive (bytes for SPI/I2C/UART) | `sizeof(buffer)`, `1` |
+
+**System**
+
+| Param | Meaning | Values |
+|---|---|---|
+| `Delay` | wait time in ms | `500` |
+| `IRQn_Type IRQn` | enum naming one interrupt line in the NVIC (the interrupt controller). Defined in `stm32f407xx.h` | `EXTI0_IRQn` (pin 0 of any port), `EXTI9_5_IRQn` (pins 5-9), `EXTI15_10_IRQn`, `TIM4_IRQn`, `SPI1_IRQn`, `I2C1_EV_IRQn`, `USART2_IRQn`, `DMA1_Stream5_IRQn`... |
+| `PreemptPriority` | can this interrupt **interrupt another** running handler. Lower = more urgent | `0..15`, but this project uses `NVIC_PRIORITYGROUP_0` (no preemption), so it must be `0` |
+| `SubPriority` | tie-breaker when two interrupts wait at the same time; never interrupts a running handler | `0..15` (lower runs first) |
+| `Regulator` | voltage regulator state during sleep. Main = normal, low-power = less current but slower wake-up | `PWR_MAINREGULATOR_ON`, `PWR_LOWPOWERREGULATOR_ON`. Ignored by `EnterSLEEPMode` on F4, matters for STOP |
+| `SLEEPEntry`, `STOPEntry` | which CPU instruction enters sleep, and so what wakes it | `PWR_SLEEPENTRY_WFI` (wake on interrupt, usual choice), `PWR_SLEEPENTRY_WFE` (wake on event); `PWR_STOPENTRY_WFI` / `_WFE` |
+
+**GPIO**
+
+| Param | Meaning | Values |
+|---|---|---|
+| `GPIO_TypeDef *GPIOx` | pointer to a port's registers | `GPIOA`..`GPIOI`, or CubeMX names like `LD4_GPIO_Port` |
+| `GPIO_Pin` | bit mask of pins in that port; OR several to act on them at once | `GPIO_PIN_0`..`GPIO_PIN_15`, `GPIO_PIN_12 \| GPIO_PIN_13`, `LD4_Pin` |
+| `GPIO_PinState PinState` | output level | `GPIO_PIN_SET` (HIGH, 3.3 V), `GPIO_PIN_RESET` (LOW, 0 V) |
+| `GPIO_Pin` in `EXTI_Callback` | which pin fired; one callback serves all pins | `if (GPIO_Pin == B1_Pin)` |
+
+**SPI / I2C / I2S**
+
+| Param | Meaning | Values |
+|---|---|---|
+| `DevAddress` | I2C slave address shifted left by 1 (bit 0 is the read/write bit, HAL sets it) | audio DAC: 7-bit `0x4A` -> `0x94` |
+| `MemAddress` | register number inside the I2C device | `0x01` (from the device datasheet) |
+| `MemAddSize` | how wide that register number is | `I2C_MEMADD_SIZE_8BIT` (almost always), `I2C_MEMADD_SIZE_16BIT` (big EEPROMs) |
+| `Trials` | how many times `IsDeviceReady` retries | `3` |
+| `Size` for I2S | number of 16-bit samples (stereo = 2 per frame) | `sizeof(buf) / 2` |
+
+**TIM**
+
+| Param | Meaning | Values |
+|---|---|---|
+| `Channel` | which of the timer's 4 outputs | `TIM_CHANNEL_1`..`TIM_CHANNEL_4` (TIM4 CH1..4 = PD12..15 = the 4 LEDs) |
+| `Prescaler` | divides the timer clock: counter speed = clock / (Prescaler + 1) | `84 - 1` with 84 MHz -> 1 MHz (1 tick = 1 µs) |
+| `Period` (auto-reload) | counter goes 0..Period then overflows; overflow rate = counter speed / (Period + 1) | `1000 - 1` at 1 MHz -> 1 kHz |
+| `Compare` | PWM: output is HIGH while counter < Compare, so duty = Compare / (Period + 1) | `0` = off, `Period + 1` = fully on |
+| `Counter` | new value for the running counter | `0` |
+
+**ADC**
+
+| Param / return | Meaning | Values |
+|---|---|---|
+| `HAL_ADC_GetValue` result | raw 12-bit reading | `0..4095`; volts = `value * 3.3f / 4095` |
+
 ### Callbacks: you write them, HAL calls them
 
 The HAL defines these as `__weak` empty functions. When you write a function with the **exact same name and parameters** in `USER CODE BEGIN 4`, yours replaces the empty one. A typo means yours is silently ignored. Copy the name from the `.h` file to be safe.
