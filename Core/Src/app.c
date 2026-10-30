@@ -3,6 +3,7 @@
 #include "main.h"
 #include "stm32f4xx_hal.h"
 #include <stdint.h>
+#include "doorbell.h"
 
 #define DEBOUNCE_MS 50
 
@@ -20,15 +21,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
     lastPressTick = now;
     pressCount++;
+    Doorbell_OnPress();
 }
 
 void App_Start(void)
 {
+    Doorbell_Init();
     LOG("App started\n");
 }
 
 void App_Update(void)
 {
+    Doorbell_Update();
     static uint32_t lastPrinted;
     uint32_t count = pressCount;
 
