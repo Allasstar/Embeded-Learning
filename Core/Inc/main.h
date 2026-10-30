@@ -61,6 +61,9 @@ void Error_Handler(void);
 #define CS_I2C_SPI_GPIO_Port GPIOE
 #define BTN_Pin GPIO_PIN_4
 #define BTN_GPIO_Port GPIOE
+#define BTN_EXTI_IRQn EXTI4_IRQn
+#define BUZZER_Pin GPIO_PIN_5
+#define BUZZER_GPIO_Port GPIOE
 #define PC14_OSC32_IN_Pin GPIO_PIN_14
 #define PC14_OSC32_IN_GPIO_Port GPIOC
 #define PC15_OSC32_OUT_Pin GPIO_PIN_15
