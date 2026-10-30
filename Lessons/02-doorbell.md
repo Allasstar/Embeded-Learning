@@ -28,7 +28,7 @@ A **passive** buzzer has no oscillator inside: it only clicks when its input cha
 ## Step 0: Find out what the button outputs
 Before writing interrupt code, learn what the module does.
 
-1. CubeMX: **PE4** → `GPIO_Input`, label `BTN`, no pull. Generate.
+1. CubeMX, **Pinout view**: left-click **PE4** → `GPIO_Input`. Then **System Core → GPIO**, select the PE4 row, set **User Label** to `BTN`, pull = *No pull*. Generate.
 2. In `App_Update()` temporarily add:
    ```c
    LOG("BTN = %d\n", HAL_GPIO_ReadPin(BTN_GPIO_Port, BTN_Pin));
@@ -36,19 +36,61 @@ Before writing interrupt code, learn what the module does.
    ```
 3. Run in Debug and press the button. Write down: released = ?, pressed = ?
 
-Most of these modules have a resistor that holds the output in one state, and the button pulls it to the other. If yours reads random values when released, it has no resistor: set the pin's **Pull** to *Pull-up* in CubeMX.
+Most of these modules have a resistor that holds the output in one state, and the button pulls it to the other. If yours reads random values when released, it has no resistor: set the pin's **Pull** to *Pull-up* in CubeMX and test again.
+
+**Result with this module:** released = random (floating), pressed = steady `0`. After setting *Pull-up*: released = `1`, pressed = `0`. So a press is a **falling edge** (1 → 0).
+
+**Why random?** A pin with nothing driving it is *floating*: it picks up noise and reads 0 or 1 at random. The pull-up is an internal resistor (~40 kΩ) from the pin to 3.3 V. Released, it pulls the pin high. Pressed, the button connects the pin to GND, which wins over the weak resistor:
+
+```
+3.3V
+ |
+[40k]  internal pull-up
+ |
+ +---- PE4
+ |
+[button]
+ |
+GND
+```
 
 Remove the test code.
 
 ## CubeMX setup
-1. **PE4** → `GPIO_EXTI4`, label `BTN`. In **System Core → GPIO → PE4**:
-   - GPIO mode: *External Interrupt Mode with Falling edge* if the button reads 0 when pressed, *Rising edge* if it reads 1.
-   - Pull: as found in step 0.
-2. **System Core → NVIC**: tick **EXTI line4 interrupt**.
-3. **PE5** → `GPIO_Output`, label `BUZZER`.
-4. Generate Code. Look in `stm32f4xx_it.c`: CubeMX added `EXTI4_IRQHandler()`, which calls `HAL_GPIO_EXTI_IRQHandler(BTN_Pin)`, which calls your `HAL_GPIO_EXTI_Callback()`.
+
+The settings are explained in [CUBEMX_GPIO_NVIC.md](../CUBEMX_GPIO_NVIC.md). Do them in this order:
+
+1. **Pinout view**: left-click **PE4** → `GPIO_EXTI4`. Left-click **PE5** → `GPIO_Output`.
+   - The GPIO mode dropdown offers the interrupt modes **only** for `GPIO_EXTIx` pins. On a `GPIO_Input` pin it shows just *Input mode*.
+2. **System Core → GPIO**, select the **PE4** row, and set in the box below the table:
+   - **GPIO mode**: *External Interrupt Mode with Falling edge trigger detection* (use *Rising* if your button reads 1 when pressed). Not *Event Mode*: event mode never calls your code.
+   - **GPIO Pull-up/Pull-down**: *Pull-up* (as found in step 0).
+   - **User Label**: `BTN`.
+3. Select the **PE5** row: mode *Output Push Pull*, *No pull*, **User Label** `BUZZER`.
+4. **System Core → NVIC**: tick **EXTI line4 interrupt**. The row only appears after PE4 is in an interrupt mode.
+5. **Generate Code**, then check:
+   - `main.h` has `BTN_Pin`, `BTN_GPIO_Port`, `BUZZER_Pin`, `BUZZER_GPIO_Port`
+   - `main.c` calls `HAL_NVIC_EnableIRQ(EXTI4_IRQn)`
+   - `stm32f4xx_it.c` has `EXTI4_IRQHandler()`, which calls `HAL_GPIO_EXTI_IRQHandler(BTN_Pin)`, which calls your `HAL_GPIO_EXTI_Callback()`
+
+> **Trap:** changing a pin's function in the Pinout view (`GPIO_Input` → `GPIO_EXTI4`) **resets its pull and label**. Re-check both after changing it. An empty label means no `BTN_Pin` and a compile error.
 
 The chain is: pin edge → EXTI hardware → NVIC → `EXTI4_IRQHandler` → HAL → `HAL_GPIO_EXTI_Callback`.
+
+### What you set, and why
+
+| Setting | Why |
+|---|---|
+| **PE4 → `GPIO_EXTI4`** | A press is rare and unpredictable. Polling in the main loop wastes CPU and can miss short presses. EXTI hardware watches the pin and interrupts the CPU the moment it changes. |
+| **Pull-up** | Without it the pin floats and would fire the interrupt randomly. The pull-up gives a defined idle state: released = 1, pressed = 0. |
+| **Falling edge** | A press is the 1 → 0 change. One edge = one event per press. *Rising* would fire on release, *Rising/Falling* twice per press. |
+| **Interrupt, not Event mode** | Event mode triggers hardware without running a handler, so the callback would never be called. |
+| **NVIC: EXTI line4 enabled** | Two gates: EXTI detects the edge, NVIC decides whether the CPU is interrupted. If the NVIC line is off the edge is ignored. Line 4 because **EXTI line number = pin number**. |
+| **Label `BTN` / `BUZZER`** | CubeMX generates `BTN_Pin` / `BTN_GPIO_Port` in `main.h`, so your code never contains raw `GPIO_PIN_4` / `GPIOE`. |
+| **PE5 → push-pull output, no pull** | A passive buzzer only sounds when its input changes, so the code toggles PE5 hundreds of times per second. That needs an output that actively drives both HIGH and LOW. A pull resistor does nothing on an output. Initial level Low = silent at boot. |
+| **Priority 0** | Nothing else competes for the CPU yet. Priorities matter in lesson 20. |
+
+The module's `+` and `-` pins only supply power. Only the S wires carry the signal into the chip.
 
 **EXTI line number = pin number.** PE4 uses EXTI line 4, PA0 uses line 0. Only **one port per line**: PE4 and PA4 can't both be interrupts. Lines 5–9 share one handler (`EXTI9_5_IRQHandler`) and lines 10–15 share another (`EXTI15_10_IRQHandler`). That's why the callback gets `GPIO_Pin`: to tell you which one fired.
 
