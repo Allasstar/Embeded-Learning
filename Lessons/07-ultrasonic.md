@@ -1,0 +1,205 @@
+# Lesson 07: Ultrasonic Distance
+
+## Goal
+Measure distance with the HC-SR04 ultrasonic module. The timer generates the trigger pulse **and** measures the echo pulse in hardware, so the CPU only does the maths.
+
+## What you learn
+- Input capture: the timer stores the counter value at the instant an edge arrives
+- Using two channels of one timer together (one output, one input)
+- Handling counter wrap-around
+- Timeouts, out-of-range readings, median filtering
+- 5 V signals into a 3.3 V MCU (5 V tolerant pins)
+
+## How the HC-SR04 works
+1. You send a **≥10 µs HIGH pulse** on *Trig*.
+2. The module sends 8 ultrasonic bursts at 40 kHz.
+3. It raises *Echo* HIGH, and lowers it when the echo comes back.
+4. Echo HIGH time = round trip time of sound.
+
+```
+distance_cm = echo_us / 58        (sound: 343 m/s, there and back → 58.3 µs per cm)
+```
+
+Range 2–400 cm. Wait at least 60 ms between measurements so old echoes die out.
+
+## Parts and wiring
+
+| HC-SR04 pin | Connect to |
+|---|---|
+| VCC | **5V** (board 5V pin is fine, it's ~15 mA) |
+| GND | GND |
+| Trig | PE11 |
+| Echo | PE9 |
+
+**Echo outputs 5 V.** PE9 is a **5 V tolerant (FT)** pin: check in the STM32F407 datasheet, pin table, "I/O structure" column. Never connect a 5 V signal to a pin that is not FT, and never to an ADC pin.
+
+## The timer plan
+**TIM1** (APB2, 168 MHz):
+
+```
+Prescaler = 168-1     → 1 MHz, 1 tick = 1 µs
+Period    = 60000-1   → counter wraps every 60 ms = one measurement cycle
+CH2 (PE11) PWM, Pulse = 10   → 10 µs trigger at the start of every cycle
+CH1 (PE9)  Input capture, both edges → timestamps of Echo rising and falling
+```
+
+The trigger repeats by itself every 60 ms. No code involved.
+
+## CubeMX setup
+1. **PE9** → `TIM1_CH1`, label `US_ECHO`. **PE11** → `TIM1_CH2`, label `US_TRIG`.
+2. **Timers → TIM1**:
+   - Clock Source: *Internal Clock*
+   - Channel1: *Input Capture direct mode*
+   - Channel2: *PWM Generation CH2*
+   - Prescaler `168-1`, Counter Period `60000-1`
+   - Input Capture Channel 1 → Polarity Selection: *Both Edges*
+   - PWM Generation Channel 2 → Pulse: `10`
+3. **NVIC Settings** tab of TIM1: tick **TIM1 capture compare interrupt**.
+4. Generate.
+
+## Steps
+
+### Step 1: Check the trigger
+In `App_Start()`:
+
+```c
+extern TIM_HandleTypeDef htim1;
+HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+```
+
+If you have a logic analyzer, look at PE11: a 10 µs pulse every 60 ms. Without one, you can hear a faint click from the module if you hold it to your ear.
+
+TIM1 is an **advanced** timer: its outputs stay disabled until the "main output enable" (MOE) bit is set. `HAL_TIM_PWM_Start` does that for you. If you write registers by hand, remember it.
+
+### Step 2: Capture the echo
+
+`Core/Inc/ultrasonic.h`:
+
+```c
+#pragma once
+#include <stdint.h>
+#include "main.h"
+
+void Ultrasonic_Init(void);
+void Ultrasonic_Update(void);
+void Ultrasonic_OnCapture(TIM_HandleTypeDef *htim);
+int32_t Ultrasonic_GetMm(void);
+```
+
+`Core/Src/ultrasonic.c`:
+
+```c
+#include "ultrasonic.h"
+#include "log.h"
+
+extern TIM_HandleTypeDef htim1;
+
+#define CYCLE_US 60000
+#define NO_ECHO_TIMEOUT_MS 200
+
+static volatile uint32_t riseTime;
+static volatile uint32_t echoUs;
+static volatile uint8_t newReading;
+
+static int32_t distanceMm = -1;
+static uint32_t lastReadingTick;
+
+void Ultrasonic_Init(void)
+{
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+}
+
+void Ultrasonic_OnCapture(TIM_HandleTypeDef *htim)
+{
+  uint32_t t = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+  if (HAL_GPIO_ReadPin(US_ECHO_GPIO_Port, US_ECHO_Pin) == GPIO_PIN_SET)
+  {
+    riseTime = t;
+  }
+  else
+  {
+    echoUs = t >= riseTime ? t - riseTime : t + CYCLE_US - riseTime;
+    newReading = 1;
+  }
+}
+
+void Ultrasonic_Update(void)
+{
+  uint32_t now = HAL_GetTick();
+
+  if (newReading)
+  {
+    newReading = 0;
+    lastReadingTick = now;
+    distanceMm = echoUs * 343 / 2000;
+    LOG("%ld mm\n", distanceMm);
+  }
+  else if (now - lastReadingTick > NO_ECHO_TIMEOUT_MS)
+  {
+    distanceMm = -1;
+  }
+}
+
+int32_t Ultrasonic_GetMm(void)
+{
+  return distanceMm;
+}
+```
+
+In `app.c`:
+
+```c
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+    Ultrasonic_OnCapture(htim);
+}
+```
+
+**How do we know which edge it was?** "Both edges" captures both, but doesn't say which. Reading the pin inside the interrupt tells us: if it's HIGH now, that was the rising edge. This works because the echo pulse lasts ≥ 150 µs, much longer than the ~1 µs it takes to enter the interrupt.
+
+**The wrap-around:** the counter restarts every 60 ms. If the echo starts at 59 000 and ends at 1 000 (next cycle), `end - start` is negative. The `t + CYCLE_US - riseTime` branch fixes that.
+
+### Step 3: Filter outliers
+Ultrasonic readings jump now and then (soft surfaces, angled walls, crosstalk). A **median of 5** removes single bad readings without lagging like an average:
+
+```c
+static int32_t history[5];
+static uint32_t historyPos;
+
+static int32_t Median5(void)
+{
+  int32_t s[5];
+  for (int i = 0; i < 5; i++) s[i] = history[i];
+  for (int i = 1; i < 5; i++)
+    for (int j = i; j > 0 && s[j - 1] > s[j]; j--)
+    {
+      int32_t tmp = s[j]; s[j] = s[j - 1]; s[j - 1] = tmp;
+    }
+  return s[2];
+}
+```
+
+Push each new reading into `history[historyPos++ % 5]` and report `Median5()`.
+
+## Check it works
+- [ ] Hand at 10 cm, 20 cm, 50 cm with a ruler: readings within ~1 cm
+- [ ] Nothing in front (point at the ceiling far away): reports -1 / out of range
+- [ ] Readings don't jump when you hold your hand still
+
+## Troubleshooting
+| Symptom | Cause |
+|---|---|
+| Never any reading | capture interrupt not enabled in NVIC, `HAL_TIM_IC_Start_IT` missing, or VCC not 5 V |
+| Always the same large value | Echo stuck high: some clone modules hold Echo ~200 ms when nothing returns |
+| Distances half / double | wrong prescaler (TIM1 is 168 MHz, not 84) |
+| Random huge values | wrap-around not handled |
+| Works on the table, not across the room | soft or angled surfaces absorb/deflect sound |
+
+## Challenges
+1. **Parking sensor**: beep faster as distance shrinks (lesson 05 buzzer), continuous tone under 10 cm.
+2. **Radar**: mount the sensor on the servo (lesson 06), sweep 0–180° in 5° steps, take one reading per step, log `angle,mm` for plotting.
+3. Temperature changes the speed of sound (331 + 0.6 × °C m/s). After lesson 15, correct for it.
+4. Use the pulse-width more cleverly: set CH1 to *rising* only and add a CH2 capture on the same pin with *falling* (indirect mode, "PWM input"). No pin reading needed. Look up "PWM input mode" in RM0090.
