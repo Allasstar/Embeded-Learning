@@ -42,7 +42,17 @@ static void EnterState(LightState next)
 void TrafficLight_Init(void)
 {
   EnterState(STATE_RED);
-  LOG("StateStart: %lu\n", stateStart);
+}
+
+void TrafficLight_RequestCrossing(void)
+{
+    uint32_t diff = HAL_GetTick() - stateStart;
+    uint32_t left = durationMs[state] - 1000;
+
+  if (state == STATE_GREEN && diff < left)
+  {
+    stateStart = HAL_GetTick() - (left);
+  }
 }
 
 void TrafficLight_Update(void)

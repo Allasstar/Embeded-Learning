@@ -28,6 +28,7 @@ void App_Update(void)
 
     if (button == GPIO_PIN_SET && lastButton == GPIO_PIN_RESET)
     {
+      TrafficLight_RequestCrossing();
       ledIndex = (ledIndex + 1) % LED_COUNT;
       LOG("ledIndex = %d\n", ledIndex);
 
