@@ -111,6 +111,12 @@ void Error_Handler(void);
 #define I2S3_SCK_GPIO_Port GPIOC
 #define I2S3_SD_Pin GPIO_PIN_12
 #define I2S3_SD_GPIO_Port GPIOC
+#define TL_RED_Pin GPIO_PIN_0
+#define TL_RED_GPIO_Port GPIOD
+#define TL_YELLOW_Pin GPIO_PIN_1
+#define TL_YELLOW_GPIO_Port GPIOD
+#define TL_GREEN_Pin GPIO_PIN_2
+#define TL_GREEN_GPIO_Port GPIOD
 #define Audio_RST_Pin GPIO_PIN_4
 #define Audio_RST_GPIO_Port GPIOD
 #define OTG_FS_OverCurrent_Pin GPIO_PIN_5

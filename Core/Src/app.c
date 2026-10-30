@@ -1,6 +1,7 @@
 #include "app.h"
 #include "main.h"
 #include "log.h"
+#include "traffic_light.h"
 
 #define LED_COUNT (sizeof(ledPins) / sizeof(ledPins[0]))
 
@@ -12,10 +13,12 @@ static uint32_t lastTick = 0;
 void App_Start(void)
 {
   LOG("App started\n");
+  TrafficLight_Init();
 }
 
 void App_Update(void)
 {
+  TrafficLight_Update();
   GPIO_PinState button = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
   uint32_t tick = HAL_GetTick();
 
