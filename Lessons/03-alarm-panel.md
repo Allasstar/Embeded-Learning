@@ -27,7 +27,22 @@ Most blue boards with a small potentiometer have an **LM393 comparator**: it com
 The **PIR** (HC-SR501) has two pots: *Sx* = sensitivity, *Tx* = how long the output stays HIGH after motion (3 s to 5 min, turn it fully counter-clockwise for the shortest time). It needs **~60 s to settle** after power-up and gives false triggers during that time.
 
 ## CubeMX setup
-Set each signal pin to `GPIO_Input` with a label: `PIR`, `HALL`, `IR_OBST`, `VIBRATION`. Pull: *No pull* (the modules drive the line). Generate.
+Set each signal pin to `GPIO_Input` with a label: `PIR`, `HALL`, `IR_OBST`, `VIBRATION`.
+
+| Pin | Label | Pull |
+|---|---|---|
+| PE7 | `PIR` | No pull (the module drives the line) |
+| PE8 | `HALL` | **Pull-up** |
+| PE10 | `IR_OBST` | No pull (the module drives the line) |
+| PE12 | `VIBRATION` | No pull (the module drives the line) |
+
+The Hall module has an open-collector output: it only pulls the line low near a magnet and otherwise leaves it floating (about 1.78 V on a tester, which the MCU reads randomly). The pull-up gives it a defined idle `1`.
+
+To set the pull-up:
+1. Open the `.ioc` file and go to **Pinout & Configuration → System Core → GPIO**.
+2. Click the **PE8** row (`HALL`).
+3. In the settings below the list, set **GPIO Pull-up/Pull-down** to *Pull-up*.
+4. Save and **Generate Code**.
 
 ## Steps
 

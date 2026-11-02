@@ -334,13 +334,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(BOOT1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PIR_Pin HALL_Pin IR_OBST_Pin VIBRATION_Pin
-                           TOUCH_Pin FLAME_Pin */
-  GPIO_InitStruct.Pin = PIR_Pin|HALL_Pin|IR_OBST_Pin|VIBRATION_Pin
-                          |TOUCH_Pin|FLAME_Pin;
+  /*Configure GPIO pins : PIR_Pin IR_OBST_Pin VIBRATION_Pin TOUCH_Pin
+                           FLAME_Pin */
+  GPIO_InitStruct.Pin = PIR_Pin|IR_OBST_Pin|VIBRATION_Pin|TOUCH_Pin
+                          |FLAME_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : HALL_Pin */
+  GPIO_InitStruct.Pin = HALL_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(HALL_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : CLK_IN_Pin */
   GPIO_InitStruct.Pin = CLK_IN_Pin;
