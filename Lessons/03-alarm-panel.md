@@ -50,7 +50,7 @@ Trigger each sensor and fill in this table:
 | PIR | 0 (0 V) | 1 (3.3 V, stays high for the Tx hold time) |
 | Hall | 1 (1.78 V floating, needs pull-up) | 0 (~0 V) |
 | IR | 1 (3.27 V) | 0 (~0.1 V) |
-| Vibration | | |
+| Vibration | 0 (0 V) | 1 (pulses while shaking, tester shows 0–2.7 V) |
 
 A sensor whose triggered level is 0 is **active-low**.
 
