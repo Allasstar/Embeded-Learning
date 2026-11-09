@@ -10,7 +10,9 @@ Play a melody on the passive buzzer using a hardware timer to make each note. Th
 - Data-driven code: a melody is just an array
 
 ## Parts and wiring
-Same as lesson 02: buzzer S → **PE5**, `+` → 3V, `-` → GND.
+Passive buzzer module: S → **PE5**, `+` → 3V, `-` → GND.
+
+Passive means it has no oscillator inside: it makes a sound only while you feed it a square wave, and the wave's frequency is the pitch. That's why a timer is needed.
 
 ## The maths
 PE5 can be **TIM9 channel 1**. TIM9 sits on **APB2**, so its clock is **168 MHz** (not 84 like TIM3/TIM4).
@@ -35,12 +37,14 @@ Compare   = (Period + 1) / 2   → 50% duty, loudest square wave
 TIM9 is 16-bit, so the Period can go up to 65535. The lowest note is 1 MHz / 65536 ≈ 15 Hz, far below anything you need.
 
 ## CubeMX setup
-1. **PE5** → `TIM9_CH1` (it loses the `BUZZER` GPIO label from lesson 02).
+1. **PE5** → `TIM9_CH1`. PE5 has this timer function in its alternate-function table; the timer output is routed to the pin in hardware, so no CPU code toggles it.
 2. **Timers → TIM9**: Clock Source *Internal Clock*, Channel1 *PWM Generation CH1*.
-3. Parameters: Prescaler `168-1`, Counter Period `1000-1`, **auto-reload preload: Enable**.
+3. Parameters:
+   - Prescaler `168-1`: 168 MHz / 168 = 1 MHz, so one tick is 1 µs and the Period in ticks equals the period in µs.
+   - Counter Period `1000-1`: any starting value (1 kHz); `Buzzer_Tone()` overwrites it.
+   - **auto-reload preload: Enable**: see the *Why enable preload?* note in Step 1.
+   - PWM Generation Channel 1: Mode *PWM mode 1*, Pulse `0` (silent until the first note), Fast Mode *Disable*.
 4. Generate.
-
-Lesson 02's doorbell toggles PE5 as GPIO, so remove `Doorbell_Update()` from `app.c` (or rewrite it later with this module as a challenge).
 
 ## Steps
 
@@ -176,12 +180,14 @@ void Melody_Update(void)
 
 The short silent gap at the end of each note makes repeated notes (C C, G G) sound separate instead of one long note.
 
-Call `Melody_Play()` when the blue button is pressed and `Melody_Update()` in `App_Update()`.
+Call `Buzzer_Init()` in `App_Start()`, `Melody_Update()` in `App_Update()`, and `Melody_Play()` on the blue button's rising edge. `App_Update()` already detects that edge to change the blinking LED, so add the call there.
+
+Polling `Melody_Update()` instead of using `HAL_Delay()` is deliberate: `HAL_Delay()` would freeze the main loop for the whole melody, and the LED blink and button reading would stop.
 
 ## Check it works
 - [ ] 440 Hz matches a tuner app
 - [ ] Melody is recognisable, repeated notes are separate
-- [ ] Other modules (traffic light, LED fade) keep running during playback
+- [ ] The LED keeps blinking and the button still works during playback
 - [ ] No clicks between notes
 
 ## Troubleshooting
@@ -193,7 +199,7 @@ Call `Melody_Play()` when the blue button is pressed and `Melody_Update()` in `A
 | Silence | compare is 0, or `HAL_TIM_PWM_Start` missing |
 
 ## Challenges
-1. Add a `tempo` variable that scales all durations. Use the button module to speed up.
+1. Add a `tempo` variable that scales all durations. Use the blue button to cycle through speeds.
 2. Store melodies in a compact format, e.g. a string `"C4 C4 G4 G4 A4 A4 G4-"`, and write a parser.
-3. Rewrite the lesson 02 doorbell on top of `Buzzer_Tone()`.
+3. Write a two-tone doorbell (ding-dong) on top of `Buzzer_Tone()`.
 4. Volume: try duties of 50%, 10%, 2%. Explain why lower duty sounds quieter but also changes the tone.
