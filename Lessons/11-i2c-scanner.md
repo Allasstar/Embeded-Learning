@@ -39,23 +39,24 @@ Nothing. I2C1 is already set up. (Check: **Connectivity → I2C1**, Speed Mode *
 ### Step 1: Scanner
 
 ```c
-#include "console.h"
+#include "main.h"
+#include "log.h"
 
 extern I2C_HandleTypeDef hi2c1;
 
 static void I2cScan(I2C_HandleTypeDef *bus)
 {
-  Console_Printf("Scanning...\r\n");
+  LOG("Scanning...\n");
   for (uint16_t address = 1; address < 128; address++)
   {
     if (HAL_I2C_IsDeviceReady(bus, address << 1, 2, 5) == HAL_OK)
-      Console_Printf("  found 0x%02X\r\n", address);
+      LOG("  found 0x%02X\n", address);
   }
-  Console_Printf("done\r\n");
+  LOG("done\n");
 }
 ```
 
-Add a `scan` command to your console (lesson 10) that calls `I2cScan(&hi2c1)`. Or call it from `App_Start()` and print with `LOG`.
+Call `I2cScan(&hi2c1)` from `App_Start()`; `LOG` prints to the debug console (Debug build). To scan again without reflashing, call it when the blue button is pressed.
 
 Run it with only the PCF8591 connected. Expected: `found 0x48`.
 
@@ -63,7 +64,7 @@ Run it with only the PCF8591 connected. Expected: `found 0x48`.
 The CS43L22 audio DAC is on the same bus at **0x4A**, but it's held in reset by **PD4** (`Audio_RST`), and a chip in reset doesn't answer.
 
 1. Scan: 0x4A missing.
-2. Add a console command that does `HAL_GPIO_WritePin(Audio_RST_GPIO_Port, Audio_RST_Pin, GPIO_PIN_SET);` (check the label in `main.h`).
+2. In `App_Start()`, after the first scan, do `HAL_GPIO_WritePin(Audio_RST_GPIO_Port, Audio_RST_Pin, GPIO_PIN_SET);` (check the label in `main.h`).
 3. Scan again: **0x4A appears**.
 
 Now you know the scanner really sees the bus. This "change one thing, observe" approach is how you debug hardware.
@@ -100,7 +101,7 @@ static uint8_t Pcf8591_Read(uint8_t channel)
 }
 ```
 
-Add a `pcf` command that prints all four channels. The module has jumpers connecting some inputs to an on-board **photoresistor**, **thermistor** and **potentiometer**. Cover the board, warm it with your finger, turn its pot, and work out which channel is which. Don't trust online pinouts; measure.
+Print all four channels with `LOG` every 500 ms from `App_Update()`. The module has jumpers connecting some inputs to an on-board **photoresistor**, **thermistor** and **potentiometer**. Cover the board, warm it with your finger, turn its pot, and work out which channel is which. Don't trust online pinouts; measure.
 
 The result is 8-bit (0..255). Compare with the STM32's 12-bit ADC from lesson 08.
 
@@ -123,7 +124,7 @@ Every HAL I2C function returns a status. Ignoring it means a disconnected wire s
 ```c
 HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(&hi2c1, PCF8591_ADDR, &control, 1, 10);
 if (status != HAL_OK)
-  Console_Printf("I2C error %d, code 0x%lX\r\n", status, HAL_I2C_GetError(&hi2c1));
+  LOG("I2C error %d, code 0x%lX\n", status, HAL_I2C_GetError(&hi2c1));
 ```
 
 Unplug SDA while it runs and see what you get.

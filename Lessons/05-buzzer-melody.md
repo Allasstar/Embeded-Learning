@@ -37,14 +37,39 @@ Compare   = (Period + 1) / 2   → 50% duty, loudest square wave
 TIM9 is 16-bit, so the Period can go up to 65535. The lowest note is 1 MHz / 65536 ≈ 15 Hz, far below anything you need.
 
 ## CubeMX setup
-1. **PE5** → `TIM9_CH1`. PE5 has this timer function in its alternate-function table; the timer output is routed to the pin in hardware, so no CPU code toggles it.
-2. **Timers → TIM9**: Clock Source *Internal Clock*, Channel1 *PWM Generation CH1*.
-3. Parameters:
-   - Prescaler `168-1`: 168 MHz / 168 = 1 MHz, so one tick is 1 µs and the Period in ticks equals the period in µs.
-   - Counter Period `1000-1`: any starting value (1 kHz); `Buzzer_Tone()` overwrites it.
-   - **auto-reload preload: Enable**: see the *Why enable preload?* note in Step 1.
-   - PWM Generation Channel 1: Mode *PWM mode 1*, Pulse `0` (silent until the first note), Fast Mode *Disable*.
-4. Generate.
+
+Open `Test_DISC1.ioc` in STM32CubeMX.
+
+### 1. Route the pin
+In the Pinout view, click **PE5** and choose `TIM9_CH1`.
+
+*Why:* PE5 is a normal GPIO by default. Choosing `TIM9_CH1` connects the pin to the timer's output, so the timer drives it in hardware and the CPU never toggles it.
+
+### 2. Enable the timer
+**Timers → TIM9**:
+- **Clock Source**: `Internal Clock`
+- **Channel1**: `PWM Generation CH1`
+
+*Why internal clock:* the counter counts ticks of the chip's own clock. TIM9 sits on APB2, which runs the timers at 168 MHz. The other choices are for counting external signals.
+
+### 3. Parameter Settings
+
+| Setting | Value | Why |
+|---|---|---|
+| Prescaler | `168-1` | 168 MHz / 168 = 1 MHz, so 1 tick = 1 µs and the period in ticks equals the period in µs. The `-1` is there because the hardware divides by (value + 1). |
+| Counter Mode | `Up` | The default. The counter goes from 0 up to the period, then wraps. |
+| Counter Period | `1000-1` | Any starting value will do (1 kHz). `Buzzer_Tone()` overwrites it for each note. |
+| auto-reload preload | **Enable** | A new period waits until the current cycle ends. Without it every note change clicks (see *Why enable preload?* in Step 1). |
+| Mode | `PWM mode 1` | The output is high while the counter is below the compare value. |
+| Pulse | `0` | A compare value of 0 keeps the output low, so the buzzer is silent until the first note. |
+| Fast Mode | `Disable` | Only matters at very high frequencies; these notes are a few hundred Hz. |
+| CH Polarity | `High` | The default: the compare-match part of the cycle is the high part. |
+
+### 4. Check the clock (optional)
+On the Clock Configuration tab, **APB2 timer clocks** should read **168** MHz. This confirms the maths above.
+
+### 5. Generate code
+Click **Generate Code**.
 
 ## Steps
 

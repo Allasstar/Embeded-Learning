@@ -1,7 +1,7 @@
 # Lesson 10: Bluetooth Console (UART)
 
 ## Goal
-Talk to the board wirelessly: print status messages to a terminal on your phone or PC, and type commands like `led on`, `servo 45`, `status`.
+Talk to the board wirelessly: print status messages to a terminal on your phone or PC, and type commands like `led on`, `led off`, `status`.
 
 ## What you learn
 - UART: baud rate, TX/RX crossover, 8N1 framing
@@ -204,7 +204,7 @@ static void HandleLine(char *text)
 
   if (strcmp(command, "help") == 0)
   {
-    Console_Printf("help, status, led on|off, servo <0-180>\r\n");
+    Console_Printf("help, status, led on|off\r\n");
   }
   else if (strcmp(command, "status") == 0)
   {
@@ -212,13 +212,8 @@ static void HandleLine(char *text)
   }
   else if (strcmp(command, "led") == 0 && argument)
   {
-    uint32_t level = strcmp(argument, "on") == 0 ? 1000 : 0;
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, level);
-    Console_Printf("ok\r\n");
-  }
-  else if (strcmp(command, "servo") == 0 && argument)
-  {
-    Servo_MoveTo(atoi(argument));
+    GPIO_PinState level = strcmp(argument, "on") == 0 ? GPIO_PIN_SET : GPIO_PIN_RESET;
+    HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, level);
     Console_Printf("ok\r\n");
   }
   else
@@ -228,7 +223,7 @@ static void HandleLine(char *text)
 }
 ```
 
-Add `extern TIM_HandleTypeDef htim4;` (lesson 04's LED timer) and `#include "servo.h"` at the top. Add more commands: `dist` (lesson 07), `pot` (lesson 08), `play` (lesson 05).
+`led` switches the blue on-board LED (LD6, PD15). Remove the LED blinker from `app.c` if it clashes. More commands are a challenge (below).
 
 ### Step 5: Notice the transmit cost
 At 9600 baud, `Console_Printf` of 50 characters **blocks for ~52 ms**. Measure it:
@@ -239,11 +234,11 @@ Console_Printf("0123456789012345678901234567890123456789012345678\r\n");
 LOG("took %lu ms\n", HAL_GetTick() - t);
 ```
 
-During that time the LED fade, melody and servo freeze. Challenge 1 fixes it.
+During that time everything else in `App_Update()` freezes (the LED blinker, and any other module you add). Challenge 1 fixes it.
 
 ## Check it works
 - [ ] Greeting appears after reset
-- [ ] `help`, `status`, `led on`, `servo 30` all work
+- [ ] `help`, `status`, `led on`, `led off` all work
 - [ ] Pasting a long line doesn't crash anything (it's truncated)
 - [ ] Console still works after you spam keys quickly
 
@@ -260,3 +255,4 @@ During that time the LED fade, melody and servo freeze. Challenge 1 fixes it.
 2. Echo typed characters back and support **Backspace** (`0x08` / `0x7F`).
 3. Stream sensor values as CSV (`t,pot,dist\r\n`) every 100 ms and plot them on the PC (e.g. *SerialPlot*, or save and open in Excel).
 4. Change the module's name/baud with **AT commands** (HC-05: hold its button while powering up to enter AT mode at 38400 baud).
+5. Add commands for parts from other lessons once you've done them in their own branches: `servo <0-180>` (lesson 06), `dist` (lesson 07), `pot` (lesson 08), `play` (lesson 05).

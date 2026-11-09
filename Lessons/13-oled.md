@@ -31,7 +31,15 @@ Every I2C write to the SSD1306 starts with a **control byte**: `0x00` = the foll
 | SCL | PB6 |
 | SDA | PB9 |
 
-Scan I2C1 (lesson 11): expect **0x3C**.
+Scan I2C1 by calling this from `App_Start()` (`#include "log.h"`): expect **0x3C**.
+
+```c
+for (uint16_t address = 1; address < 128; address++)
+{
+  if (HAL_I2C_IsDeviceReady(&hi2c1, address << 1, 2, 5) == HAL_OK)
+    LOG("found 0x%02X\n", address);
+}
+```
 
 ## CubeMX setup
 **I2C1**: change Speed Mode to **Fast Mode**, 400000 Hz. Generate.
@@ -187,9 +195,9 @@ void Oled_DrawString(int32_t x, int32_t y, const char *text)
 ```c
 char text[22];
 Oled_Clear();
-snprintf(text, sizeof(text), "Pot %4u", AnalogIn_Filtered(ANALOG_POT));
+snprintf(text, sizeof(text), "Up %lus", HAL_GetTick() / 1000);
 Oled_DrawString(0, 0, text);
-Oled_FillRect(0, 12, AnalogIn_Filtered(ANALOG_POT) * OLED_WIDTH / 4096, 8, 1);
+Oled_FillRect(0, 12, (HAL_GetTick() % 5000) * OLED_WIDTH / 5000, 8, 1);
 Oled_Update();
 ```
 
@@ -203,7 +211,7 @@ Time `Oled_Update()` with `HAL_GetTick()` at 100 kHz and at 400 kHz. The CPU wai
 
 ## Check it works
 - [ ] Text readable, right way up
-- [ ] Bar follows the potentiometer
+- [ ] Bar grows from empty to full every 5 s
 - [ ] Ball animation is smooth
 - [ ] `Oled_Update()` takes ~25 ms at 400 kHz
 
@@ -220,5 +228,5 @@ Time `Oled_Update()` with `HAL_GetTick()` at 100 kHz and at 400 kHz. The CPU wai
 ## Challenges
 1. **DMA transfer**: add DMA for I2C1_TX in CubeMX, use `HAL_I2C_Mem_Write_DMA`, and don't touch `frame` until `HAL_I2C_MemTxCpltCallback` fires. Now `Oled_Update()` returns in microseconds. (Bonus: two framebuffers, draw into one while the other is being sent.)
 2. Draw lines with **Bresenham's algorithm**, and circles with the midpoint algorithm.
-3. Plot the photoresistor value as a scrolling graph: keep the last 128 samples in a ring buffer (lesson 10) and draw one column per sample.
+3. Plot a sensor value as a scrolling graph (for example the potentiometer or photoresistor from lesson 08): keep the last 128 samples in a ring buffer and draw one column per sample.
 4. A double-size font: draw each font pixel as a 2×2 block.

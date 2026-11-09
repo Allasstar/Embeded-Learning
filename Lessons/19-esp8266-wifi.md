@@ -5,7 +5,7 @@ Connect the board to your Wi-Fi through the ESP8266 and send sensor readings to 
 
 ## What you learn
 - Talking to a "smart" module with **AT commands**
-- Refactoring the ring buffer from lesson 10 into a reusable driver for any UART
+- An interrupt-driven UART **ring buffer** as a reusable driver
 - A **command/response state machine** with timeouts and error recovery
 - Protocols that don't fit line-based parsing (the `>` prompt)
 - Keeping secrets (Wi-Fi password) out of git
@@ -39,8 +39,8 @@ Use the **adapter board** (the small board the ESP-01 plugs into). It has a 3.3 
 
 ## Steps
 
-### Step 1: Make the ring buffer reusable
-Lesson 10's console has its ring buffer hard-wired to USART2. Now you need a second one. Turn it into a struct so any UART can have one:
+### Step 1: A ring buffer for the ESP's answers
+The ESP answers at its own pace while the main loop is busy, so receiving is interrupt-driven: `HAL_UART_Receive_IT` takes one byte, the callback stores it in a **ring buffer** (an array with a `head` index where the interrupt writes and a `tail` index where the main code reads, both wrapping around) and asks for the next byte. Nothing is lost as long as the main loop drains it often enough. It's a struct, so the same code can serve any UART:
 
 `Core/Inc/uart_rx.h`:
 
@@ -98,24 +98,37 @@ int UartRx_Read(UartRx *rx, uint8_t *out)
 }
 ```
 
-Rewrite the console to use it. In `app.c`, the callbacks dispatch by instance:
+In `app.c`, forward the callback to the instance (`static UartRx espRx;`, started with `UartRx_Start(&espRx, &huart3)` in `App_Start()`):
 
 ```c
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART2) UartRx_OnByte(&consoleRx);
   if (huart->Instance == USART3) UartRx_OnByte(&espRx);
 }
 ```
 
-(and the same in `HAL_UART_ErrorCallback`, calling `HAL_UART_Receive_IT` again.)
+and do the same in `HAL_UART_ErrorCallback`. **Why the error callback:** if a byte arrives while the previous one hasn't been read (overrun), HAL stops receiving; without calling `HAL_UART_Receive_IT` again the driver goes deaf forever.
 
-This is a **refactor**: same behaviour, better structure. Test that the console still works before going further.
+### Step 2: Talk to the ESP by hand
+Before writing any automation, send commands one at a time and look at the real answers. Keep a table of test commands in `esp.c`; the blue button (rising edge, already detected in `app.c`) sends the next one, and `App_Update()` prints every received byte with `LOG("%c", c)`:
 
-### Step 2: Pass-through mode, talk to the ESP by hand
-Add a console command `esp` that switches to pass-through: every byte from the console goes to USART3, every byte from USART3 goes to the console. Type `+++` (or any agreed word) to leave.
+```c
+static const char *testCommands[] =
+{
+  "AT\r\n",
+  "AT+GMR\r\n",
+  "AT+CWMODE=1\r\n",
+  "AT+CWLAP\r\n",
+  "AT+CWJAP=\"YourSSID\",\"YourPassword\"\r\n",
+  "AT+CIFSR\r\n",
+};
+```
 
-Now type, from your phone/PC:
+Send with `HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 100)`.
+
+Semihosting prints slowly (milliseconds per line) while the ESP sends a byte every 87 µs, and `AT+CWLAP` can answer with 1–2 KB. Set `UART_RX_SIZE` to `2048` for this step so the buffer absorbs the burst. It must stay a power of two, because the index wraps with `& (UART_RX_SIZE - 1)`.
+
+Expected answers:
 
 | Command | Expect |
 |---|---|
@@ -145,7 +158,7 @@ No answer at all? Try 9600 baud: some modules ship with that.
 Add `Core/Inc/secrets.h` to `.gitignore`, and commit a `secrets.example.h` with placeholder values instead. **Check `git status` before every commit** in this lesson.
 
 ### Step 4: Line reader
-Responses arrive line by line. Collect them like the console does:
+Responses arrive line by line. Collect them into lines:
 
 ```c
 static char line[128];
@@ -266,7 +279,7 @@ while True:
     client.close()
 ```
 
-Find the PC's IP with `ipconfig`, put it in `SERVER_IP`, and send a payload like `soil=42,temp=23.4\n` to port 5000 every 20 s. Build the payload with `snprintf`, and use its length in `AT+CIPSEND`.
+Find the PC's IP with `ipconfig`, put it in `SERVER_IP`, and send a payload like `uptime=123,presses=4\n` to port 5000 every 20 s (`presses` counts blue-button presses; any two numbers will do). Build the payload with `snprintf`, and use its length in `AT+CIPSEND`.
 
 ### Step 7: Send to ThingSpeak
 1. Create a free account at thingspeak.com, create a channel with fields 1–3, copy the **Write API key** into `secrets.h`.
@@ -277,7 +290,7 @@ snprintf(payload, sizeof(payload),
          "GET /update?api_key=%s&field1=%ld&field2=%ld HTTP/1.1\r\n"
          "Host: api.thingspeak.com\r\n"
          "Connection: close\r\n\r\n",
-         THINGSPEAK_KEY, soilPercent, temperatureTenths / 10);
+         THINGSPEAK_KEY, uptimeSeconds, pressCount);
 ```
 
 3. Watch the chart on the website update. The free tier accepts one update per **15 s**.
@@ -285,7 +298,7 @@ snprintf(payload, sizeof(payload),
 HTTP is just text over TCP. You now have the whole picture down to the bytes.
 
 ## Check it works
-- [ ] All manual AT commands answered in pass-through mode
+- [ ] All manual AT commands answered (the replies show in the debug console)
 - [ ] Node joins Wi-Fi by itself after power-up
 - [ ] PC server prints a reading every 20 s
 - [ ] ThingSpeak chart updates
@@ -304,7 +317,7 @@ HTTP is just text over TCP. You now have the whole picture down to the bytes.
 | ThingSpeak returns `0` | updates faster than every 15 s, or wrong key |
 
 ## Challenges
-1. Send the readings of the whole lesson 18 system (moisture, waterings, last watering time).
+1. Send real sensor readings instead: for example the soil moisture and waterings from lesson 18, or the temperature from lesson 15.
 2. **Receive commands**: make the ESP a TCP server (`AT+CIPMUX=1`, `AT+CIPSERVER=1,80`), parse `+IPD,...` lines, and serve a tiny HTML page with the current values.
 3. Use the PC side to **send** commands back to the board over the same TCP connection.
 4. Replace polling `HAL_UART_Transmit` with DMA so big payloads don't block.

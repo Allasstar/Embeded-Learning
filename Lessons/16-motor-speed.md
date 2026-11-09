@@ -113,10 +113,10 @@ void Motor_Set(int32_t speed)
 
 `speed` is −1000..+1000 (per mille), independent of the timer settings.
 
-### Step 2: Pot controls the motor
-Map the potentiometer (lesson 08) to −1000..+1000 with a dead zone in the middle (like lesson 09). Turn slowly from the centre.
+### Step 2: Sweep the speed
+No potentiometer is needed: let the blue button step the motor through presets, and ramp slowly to find the dead band. In `App_Update()`, on each rising edge of the blue button (already detected in `app.c`), call `Motor_NextPreset()`, which cycles `0, 500, 1000, 0, -500, -1000`.
 
-**Find the dead band**: log the speed value where the motor *starts* turning, and where it *stops* when you go back down. Typically ~300–400 to start, lower to keep turning. That gap is static vs dynamic friction. Write your numbers down; lesson 17 needs them.
+For the **dead band**, add a mode that raises `speed` by 5 every 50 ms from 0 and `LOG`s it. Note the value where the motor *starts* turning, then ramp down and note where it *stops*. Typically ~300–400 to start, lower to keep turning. That gap is static vs dynamic friction. Write your numbers down.
 
 ### Step 3: Count pulses (method A)
 Each slot passing the sensor = one rising edge = one interrupt.
@@ -145,20 +145,36 @@ rpmCounting = count * 600 / SLOTS;
 There's a tiny race: a pulse arriving between reading and zeroing is lost. Fix: disable interrupts for those two lines, or never reset and subtract the previous value instead (better, and lock-free).
 
 ### Step 4: Measure the period (method B)
-Store the time between pulses in the interrupt, using `Micros()` from lesson 15:
+Store the time between pulses in the interrupt. Use the Cortex-M4 cycle counter (`DWT->CYCCNT`, 168 counts per µs), which is far finer than the 1 ms `HAL_GetTick()`:
 
 ```c
-static volatile uint32_t lastPulseUs;
+static uint32_t UsSince(uint32_t startCycles)
+{
+  return (DWT->CYCCNT - startCycles) / (SystemCoreClock / 1000000);
+}
+```
+
+Enable the counter once in `Motor_Init()`:
+
+```c
+CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+DWT->CYCCNT = 0;
+DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+```
+
+Keep time stamps in raw cycles and divide only the difference. The 32-bit counter wraps cleanly at 2^32 (every 25.6 s) and unsigned subtraction handles that. A value converted to µs first would jump from ~25 565 000 back to 0 instead, and give one bogus period every 25.6 s. Then:
+
+```c
+static volatile uint32_t lastPulseCycles;
 static volatile uint32_t periodUs;
 
 void Motor_OnPulse(void)
 {
-  uint32_t now = Micros();
-  uint32_t elapsed = now - lastPulseUs;
+  uint32_t elapsed = UsSince(lastPulseCycles);
   if (elapsed < 300)
     return;
   periodUs = elapsed;
-  lastPulseUs = now;
+  lastPulseCycles = DWT->CYCCNT;
   pulseCount++;
 }
 ```
@@ -166,25 +182,27 @@ void Motor_OnPulse(void)
 ```c
 uint32_t RpmFromPeriod(void)
 {
-  if (Micros() - lastPulseUs > 200000 || periodUs == 0)
+  if (UsSince(lastPulseCycles) > 200000)
+    periodUs = 0;
+  if (periodUs == 0)
     return 0;
   return 60000000UL / (periodUs * SLOTS);
 }
 ```
 
 - The **300 µs filter** throws away glitches: slow edges through the comparator can trigger twice. At max speed, real pulses are > 10 ms apart, so nothing real is lost.
-- The **200 ms timeout** detects a stopped motor (otherwise the last period stays forever).
+- The **200 ms timeout** detects a stopped motor (otherwise the last period stays forever). Clearing `periodUs` keeps it at 0 even after the cycle counter wraps.
 
 ### Step 5: Compare both methods
-Log `speed, rpmCounting, rpmPeriod` every 100 ms over the console, and sweep the pot slowly.
+Log `speed, rpmCounting, rpmPeriod` every 100 ms with `LOG`, and sweep the speed slowly.
 
 - **Counting**: at 60 RPM with 20 slots you get only 2 pulses per 100 ms, so the resolution is **30 RPM**. Coarse at low speed, accurate at high speed.
 - **Period**: smooth at low speed, an update per pulse, but noisier (one uneven slot changes the result).
 
-Real systems pick by speed range, or use a hardware timer that does both. That's the encoder mode in lesson 18.
+Real systems pick by speed range, or use a hardware timer that does both (encoder mode, covered in lesson 18).
 
 ## Check it works
-- [ ] Pot centre = stopped, one side forward, other side reverse
+- [ ] Presets give stopped, forward and reverse at two speeds
 - [ ] No audible whine from the PWM
 - [ ] Both RPM methods agree within a few % at medium speed
 - [ ] RPM drops when you lightly brake the wheel with your finger
@@ -200,6 +218,6 @@ Real systems pick by speed range, or use a hardware timer that does both. That's
 | RPM always 0 | disk doesn't pass through the gap, or EXTI3 not enabled |
 
 ## Challenges
-1. Use the L9110's **B channel** for a second motor, or the pump (lesson 18).
+1. Use the L9110's **B channel** to switch the kit's pump on and off from a GPIO (B-IA = PB12, B-IB = GND, pump fully under water) while the motor runs.
 2. Count pulses in hardware: route PD3's signal into a timer's **external clock** input (ETR) so the timer counts edges with no interrupts at all.
 3. **Ramp**: limit how fast speed can change (e.g. 500 per second), so the motor never jumps from full forward to full reverse. Why is that kind to the hardware?

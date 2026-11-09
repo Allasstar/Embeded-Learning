@@ -1,7 +1,7 @@
 # Lesson 15: Weather Station
 
 ## Goal
-Read three temperature sensors with three different protocols (pressure sensor on I2C, DHT11 on a timing-critical single wire, DS18B20 on 1-Wire) and show temperature, humidity and pressure on the LCD.
+Read three temperature sensors with three different protocols (pressure sensor on I2C, DHT11 on a timing-critical single wire, DS18B20 on 1-Wire) and report temperature, humidity and pressure in the debug console.
 
 ## What you learn
 - Factory **calibration data** and integer compensation formulas from a datasheet
@@ -18,7 +18,6 @@ Read three temperature sensors with three different protocols (pressure sensor o
 | Atmospheric Pressure | VCC / GND / SCL / SDA | 3V / GND / PB6 / PB9 |
 | DHT11 | VCC / GND / DATA (S) | 3V / GND / PD6 |
 | DS18B20 | VCC / GND / DATA (S) | 3V / GND / PD7 |
-| LCD 1602 | as lesson 12 | I2C3 |
 
 ## CubeMX setup
 1. **PD6** → `GPIO_Output`, label `DHT`. **PD7** → `GPIO_Output`, label `DS18B20`.
@@ -32,7 +31,7 @@ Read three temperature sensors with three different protocols (pressure sensor o
 ## Part 1: Pressure sensor (BMP280)
 
 ### Step 1: Which chip is it?
-Scan I2C1: expect **0x76** or **0x77**. Read register **0xD0** (chip ID):
+Scan I2C1 (loop over addresses 1–127 with `HAL_I2C_IsDeviceReady(&hi2c1, address << 1, 2, 5)` and `LOG` the hits): expect **0x76** or **0x77**. Read register **0xD0** (chip ID):
 
 | ID | Chip |
 |---|---|
@@ -146,7 +145,7 @@ void DelayUs(uint32_t us)
 }
 ```
 
-Call `DelayUs_Init()` once in `App_Start()`. (`Micros()` wraps every 25 s; fine for measuring short pulses with the `now - start` pattern.)
+Call `DelayUs_Init()` once in `App_Start()`. (Careful: `Micros()` doesn't wrap at 2^32 but jumps from ~25 565 000 back to 0 every 25.6 s, because it divides a counter that wraps at 2^32 cycles. A `Micros() - start` across that jump is huge, so once in a while a read times out. The DHT11 checksum catches it and the next read works. The clean fix is to subtract raw `DWT->CYCCNT` values and divide only the difference.)
 
 ---
 
@@ -346,14 +345,13 @@ The raw value is in 1/16 °C, signed: `0x0191` = 401 → 25.06 °C; `0xFF5E` = -
 
 ## Part 5: Display
 
-Every 2 s, read the DHT11 and the BMP280, and show on the LCD:
+Every 2 s, read the DHT11, the BMP280 and the DS18B20, and `LOG` one line:
 
 ```
-T 23.4 21.9 22.0
-H 45%  P 1013hPa
+T 23.4 21.9 22.0  H 45%  P 1013hPa
 ```
 
-(BMP280, DS18B20, DHT11 temperatures on line 1.)
+(BMP280, DS18B20, DHT11 temperatures first.)
 
 Formatting tenths without `%f`: `"%ld.%ld", t / 10, labs(t % 10)` (careful with values between -1 and 0).
 
@@ -363,7 +361,7 @@ The three temperatures will disagree by 1–2 °C. Why? DHT11 is ±2 °C, BMP280
 - [ ] BMP280 chip ID matches, temperature plausible, pressure 950–1050 hPa
 - [ ] DHT11 checksum passes on almost every read
 - [ ] DS18B20 present pulse detected; temperature plausible
-- [ ] Display refreshes every 2 s, other modules keep running
+- [ ] A new line is logged every 2 s, the on-board LED blinker keeps running
 
 ## Troubleshooting
 | Symptom | Cause |
@@ -378,5 +376,5 @@ The three temperatures will disagree by 1–2 °C. Why? DHT11 is ±2 °C, BMP280
 ## Challenges
 1. Check the DS18B20 **CRC** (byte 9 of the scratchpad, Dallas/Maxim CRC-8).
 2. Compute **altitude** from pressure: `h = 44330 × (1 − (p / p0)^(1/5.255))`, p0 = today's sea-level pressure from a weather site.
-3. Log all values over Bluetooth (lesson 10) every minute for a day and plot them.
+3. Show the values on an LCD 1602 (lesson 12) or log them over Bluetooth (lesson 10) every minute for a day and plot them.
 4. Replace the DHT11's polling with **timer input capture** (lesson 07): no disabling interrupts needed.

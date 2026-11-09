@@ -59,7 +59,7 @@ On this board the LEDs PD12–PD15 are wired to **TIM4 channels 1–4**. That's 
 3. Generate Code. You now have `htim4` and `MX_TIM4_Init()`, and `stm32f4xx_hal_tim.h` appears in `Drivers/`.
 
 ### Fix app.c
-`app.c` writes the LEDs with `HAL_GPIO_WritePin` and uses `LD4_Pin` etc. Those labels are gone now. Remove that code (or the whole old blinker), and remove the alarm module from lesson 03 if it uses on-board LEDs.
+`app.c` writes the LEDs with `HAL_GPIO_WritePin` and uses `LD4_Pin` etc. Those labels are gone now. Remove that code (or the whole old blinker).
 
 ### Step 1: Light them at fixed levels
 

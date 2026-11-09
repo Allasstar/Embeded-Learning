@@ -237,7 +237,7 @@ and `App_Start()` / `App_Update()` call `Doorbell_Init()` / `Doorbell_Update()`.
 ## Check it works
 - [ ] One press = one ding-dong, every time
 - [ ] Holding the button doesn't repeat
-- [ ] Traffic light from lesson 01 keeps running during the sound
+- [ ] The on-board LED blinker in `app.c` keeps running during the sound
 
 ## Troubleshooting
 | Symptom | Cause |
