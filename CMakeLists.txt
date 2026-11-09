@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/app.c
     Core/Src/log.c
     Core/Src/buzzer.c
+    Core/Src/melody.c
 )
 
 # Add include paths
