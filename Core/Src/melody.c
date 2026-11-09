@@ -11,6 +11,7 @@
 #define NOTE_A4 440
 #define REST 0
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 typedef struct
 {
     uint16_t frequency;
@@ -35,11 +36,14 @@ static const Note twinkle[] =
         {NOTE_C4, 800},
 };
 
+static const uint8_t tempoPercent[] = {50, 100, 150, 200};
+
 #define NOTE_COUNT (sizeof(twinkle) / sizeof(twinkle[0]))
 #define GAP_MS 40
 
 static uint8_t playing;
 static uint32_t noteIndex;
+static uint32_t tempoIndex = 1;
 static uint32_t noteStart;
 
 static void StartNote(void)
@@ -64,11 +68,12 @@ void Melody_Update(void)
         return;
 
     uint32_t elapsed = HAL_GetTick() - noteStart;
+    uint32_t scaledMs = twinkle[noteIndex].durationMs * 100 / tempoPercent[tempoIndex];
 
-    if (elapsed >= twinkle[noteIndex].durationMs - GAP_MS)
+    if (elapsed >= scaledMs - GAP_MS)
         Buzzer_Off();
 
-    if (elapsed >= twinkle[noteIndex].durationMs)
+    if (elapsed >= scaledMs)
     {
         noteIndex++;
         if (noteIndex >= NOTE_COUNT)
@@ -78,4 +83,14 @@ void Melody_Update(void)
         }
         StartNote();
     }
+}
+
+void Melody_NextTempo(void)
+{
+    tempoIndex = (tempoIndex + 1) % ARRAY_SIZE(tempoPercent);
+}
+
+uint8_t Melody_IsPlaying(void)
+{
+    return playing;
 }

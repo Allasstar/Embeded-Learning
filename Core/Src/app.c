@@ -30,7 +30,15 @@ void App_Update(void)
         {
             ledIndex = (ledIndex + 1) % LED_COUNT;
             LOG("ledIndex = %d\n", ledIndex);
-            Melody_Play();
+
+            if (Melody_IsPlaying())
+            {
+                Melody_NextTempo();
+            }
+            else
+            {
+                Melody_Play();
+            }
 
             for (uint8_t i = 0; i < LED_COUNT; i++)
             {
