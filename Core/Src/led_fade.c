@@ -78,7 +78,8 @@ void LedFade_Update(void)
     for (uint32_t i = 0; i < LED_COUNT; i++)
     {
       uint32_t level = Triangle(breathPhase + i * LED_PHASE_STEP);
-      __HAL_TIM_SET_COMPARE(&htim4, ledChannels[i], Gamma(level));
+      __HAL_TIM_SET_COMPARE(&htim4, ledChannels[i], Gamma(level) * 100 / LEVEL_MAX);
+
     }
   }
 
