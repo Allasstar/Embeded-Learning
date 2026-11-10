@@ -1,24 +1,20 @@
 #include "blue_button.h"
+#include "button.h"
 #include "main.h"
 
-static uint32_t debounceMs = 20;
-static GPIO_PinState lastState = GPIO_PIN_RESET;
-static uint32_t lastSampleTick = 0;
+static Button button = {
+    .port = B1_GPIO_Port,
+    .pin = B1_Pin,
+    .debounceMs = 20,
+    .pressedState = GPIO_PIN_SET,
+};
 
 void BlueButton_SetDebounce(uint32_t ms)
 {
-    debounceMs = ms;
+    button.debounceMs = ms;
 }
 
 bool BlueButton_WasPressed(void)
 {
-    uint32_t tick = HAL_GetTick();
-    if (tick - lastSampleTick < debounceMs)
-        return false;
-
-    lastSampleTick = tick;
-    GPIO_PinState state = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
-    bool pressed = state == GPIO_PIN_SET && lastState == GPIO_PIN_RESET;
-    lastState = state;
-    return pressed;
+    return Button_WasPressed(&button);
 }
