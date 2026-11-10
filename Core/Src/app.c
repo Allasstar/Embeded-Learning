@@ -21,6 +21,8 @@ void App_Update(void)
     GPIO_PinState button = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
     uint32_t tick = HAL_GetTick();
 
+    Servo_Update();
+
     if (tick - lastTick >= 20)
     {
         lastTick = tick;

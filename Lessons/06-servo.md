@@ -46,7 +46,7 @@ With 1 µs resolution over 1000 µs of travel you get 1000 steps for 180°, abou
 ## CubeMX setup
 1. **PB14** → `TIM12_CH1`.
    *Why PB14 / TIM12:* PB14 is free on the Discovery board (nothing on-board is wired to it), and TIM12 is a simple timer that no earlier lesson used, so it can't clash with LED or buzzer PWM.
-2. **TIM12** → Clock Source *Internal Clock*.
+2. **TIM12** → tick **Internal Clock**.
    *Why:* the timer counts the 84 MHz APB1 timer clock, which is the clock the maths above assumes.
 3. Channel1 → *PWM Generation CH1*.
    *Why:* hardware PWM makes the pulse on the pin by itself, so it stays µs-accurate however busy the CPU is. If you toggled the pin from code, any delay in the main loop would make the pulse longer and the servo would jitter.
