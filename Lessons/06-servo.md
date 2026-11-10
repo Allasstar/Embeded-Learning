@@ -45,8 +45,20 @@ With 1 µs resolution over 1000 µs of travel you get 1000 steps for 180°, abou
 
 ## CubeMX setup
 1. **PB14** → `TIM12_CH1`.
-2. **TIM12**: Internal Clock, Channel1 *PWM Generation CH1*, Prescaler `84-1`, Period `20000-1`, auto-reload preload *Enable*.
-3. Generate.
+   *Why PB14 / TIM12:* PB14 is free on the Discovery board (nothing on-board is wired to it), and TIM12 is a simple timer that no earlier lesson used, so it can't clash with LED or buzzer PWM.
+2. **TIM12** → Clock Source *Internal Clock*.
+   *Why:* the timer counts the 84 MHz APB1 timer clock, which is the clock the maths above assumes.
+3. Channel1 → *PWM Generation CH1*.
+   *Why:* hardware PWM makes the pulse on the pin by itself, so it stays µs-accurate however busy the CPU is. If you toggled the pin from code, any delay in the main loop would make the pulse longer and the servo would jitter.
+4. Prescaler `84-1`.
+   *Why:* 84 MHz / 84 = 1 MHz, so one tick is 1 µs and the compare value equals the pulse width in µs. No conversion is needed in the code.
+5. Counter Period `20000-1`.
+   *Why:* 20000 ticks × 1 µs = 20 ms, which is the 50 Hz frame the servo expects. TIM12 is 16-bit (max 65535), so 20000 fits.
+6. auto-reload preload → *Enable*.
+   *Why:* a new period (ARR) value is applied only when the counter starts the next period, so changing it can never give one broken frame. The pulse width (CCR) has its own preload bit (`OC1PE`), which `HAL_TIM_PWM_ConfigChannel` always turns on. Because of that, a new pulse width also waits for the next period instead of cutting the current pulse short or making it twice as long.
+7. Leave PWM Mode 1, Pulse `0`, CH Polarity *High*.
+   *Why:* the pin is high from count 0 until the count reaches CCR, so CCR = pulse width. Pulse 0 means the pin stays low until `Servo_Init` sets the angle, so the servo doesn't jump to some random position at boot.
+8. Generate.
 
 ## Steps
 
