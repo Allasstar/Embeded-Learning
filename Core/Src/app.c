@@ -9,7 +9,7 @@ static const uint16_t ledPins[] = {LD4_Pin, LD3_Pin, LD5_Pin, LD6_Pin};
 static uint8_t ledIndex = 0;
 
 static bool IsBlinkOn(uint32_t periodMs);
-static void WritePin(uint8_t index, GPIO_PinState pinState);
+static void WriteLedPin(uint8_t index, GPIO_PinState pinState);
 
 void App_Start(void)
 {
@@ -25,17 +25,17 @@ void App_Update(void)
 
         for (uint8_t i = 0; i < LED_COUNT; i++)
         {
-            WritePin(i, GPIO_PIN_RESET);
+            WriteLedPin(i, GPIO_PIN_RESET);
         }
     }
 
     if (IsBlinkOn(1000))
     {
-        WritePin(ledIndex, GPIO_PIN_SET);
+        WriteLedPin(ledIndex, GPIO_PIN_SET);
     }
     else
     {
-        WritePin(ledIndex, GPIO_PIN_RESET);
+        WriteLedPin(ledIndex, GPIO_PIN_RESET);
     }
 }
 
@@ -44,7 +44,7 @@ static bool IsBlinkOn(uint32_t periodMs)
     return HAL_GetTick() % periodMs < periodMs / 2;
 }
 
-static void WritePin(uint8_t index, GPIO_PinState pinState)
+static void WriteLedPin(uint8_t index, GPIO_PinState pinState)
 {
     HAL_GPIO_WritePin(GPIOD, ledPins[index], pinState);
 }
