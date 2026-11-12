@@ -2,13 +2,14 @@
 #include "blue_button.h"
 #include "log.h"
 #include "main.h"
+#include "timer.h"
 
 #define LED_COUNT (sizeof(ledPins) / sizeof(ledPins[0]))
 
 static const uint16_t ledPins[] = {LD4_Pin, LD3_Pin, LD5_Pin, LD6_Pin};
 static uint8_t ledIndex = 0;
+static Timer blinkTimer = { .periodMs = 1000, .activeMs = 500 };
 
-static bool IsBlinkOn(uint32_t periodMs);
 static void WriteLedPin(uint8_t index, GPIO_PinState pinState);
 
 void App_Start(void)
@@ -29,7 +30,7 @@ void App_Update(void)
         }
     }
 
-    if (IsBlinkOn(1000))
+    if (Timer_IsActive(&blinkTimer))
     {
         WriteLedPin(ledIndex, GPIO_PIN_SET);
     }
@@ -37,11 +38,6 @@ void App_Update(void)
     {
         WriteLedPin(ledIndex, GPIO_PIN_RESET);
     }
-}
-
-static bool IsBlinkOn(uint32_t periodMs)
-{
-    return HAL_GetTick() % periodMs < periodMs / 2;
 }
 
 static void WriteLedPin(uint8_t index, GPIO_PinState pinState)
