@@ -37,6 +37,8 @@ The joystick pin is labelled "+5V", but it's just two potentiometers. Power it f
 ## Part 1: One channel, polling
 
 ### CubeMX setup
+Every ADC field is explained in [CUBEMX_ADC.md](../CUBEMX_ADC.md).
+
 1. **PA1** → `ADC1_IN1` (potentiometer). This also ticks **IN1** under *Analog → ADC1*.
 2. **Analog → ADC1 → Parameter Settings**:
    - Clock Prescaler: *PCLK2 divided by 4*
@@ -80,7 +82,19 @@ static uint32_t ReadPot(void)
 Every 200 ms, log `raw` and `raw * 3300 / 4095` (millivolts, integer maths). Turn the knob: 0..4095.
 
 ### Step 2: See the noise
-Keep the knob still. The last 1–2 digits wobble: that's noise (power supply, the long wires, the ADC itself). Try sampling times of *3 cycles* and *480 cycles*. Longer sampling lets the ADC's internal capacitor charge fully through the sensor's resistance: less noise, slower conversion.
+Set the knob to the middle and leave it there. The last 1–2 digits wobble: that's noise (power supply, the long wires, the ADC itself). Write down the lowest and highest value over a few seconds.
+
+Now change Rank 1's Sampling Time to *3 Cycles*, then *480 Cycles*, and do the same each time. Measured on this board:
+
+| Sampling time | Range | Wobble |
+|---|---|---|
+| 3 cycles | 1991–2001 | 10 |
+| 84 cycles | 1994–2006 | 12 |
+| 480 cycles | 1995–2002 | 7 |
+
+Almost no difference. Before each conversion, the ADC connects a small internal capacitor to the pin and lets it charge to the pin's voltage; the sampling time is how long that lasts. With **only one channel**, the capacitor still holds the voltage from the last conversion of the same pot, so there's almost nothing to charge, and even 3 cycles is enough. 480 cycles averages over a longer time and smooths a little fast noise, but most of the wobble comes from the supply and wiring, not the ADC. The filter in Step 4 deals with that.
+
+Sampling time starts to matter when the ADC switches between channels. You'll see it in Step 5.
 
 ## Part 2: Four channels with DMA
 
@@ -98,7 +112,7 @@ Keep the Part 1 setup and add to it.
 2. **ADC1 → Parameter Settings** (change these):
    - Scan Conversion Mode: *Enabled*
    - Continuous Conversion Mode: *Enabled*
-   - DMA Continuous Requests: *Enabled*
+   - DMA Continuous Requests: *Enabled* (greyed out until you add the DMA in step 3; do step 3 first, then come back)
    - End Of Conversion Selection: *EOC flag at the end of all conversions*
    - Number Of Conversion: `4`
    - Ranks, all with Sampling Time *480 Cycles*:
@@ -222,6 +236,15 @@ uint16_t AnalogIn_Filtered(AnalogInput input)
 
 `dmaBuffer` is `volatile` because the DMA writes it behind the compiler's back, the same reason as variables shared with interrupts.
 
+Hook it up:
+1. Add `Core/Src/analog_in.c` to `target_sources` in `CMakeLists.txt`.
+2. `App_Start`: call `AnalogIn_Init()` once.
+3. `App_Update`: call `AnalogIn_Update()` every loop, outside any timer.
+4. Every 200 ms, log the raw value of all four channels on one line.
+5. Delete `ReadPot()`. The ADC now belongs to the DMA. Polling it returns `HAL_ERROR`, and the `HAL_ADC_Stop()` inside it would switch the ADC off.
+
+Turn each knob, move the joystick and cover the light sensor. Only its own number should change.
+
 ### Step 4: The filter
 `filteredX16 += raw - filteredX16 / 16` is an **exponential moving average** with integer maths. Each new sample moves the result 1/16 of the way toward it. It's stored multiplied by 16 so you don't lose the fractional part. It needs only one variable per channel (an average of the last N samples needs N). Bigger divisor = smoother but slower to react.
 
@@ -229,7 +252,16 @@ Log raw vs filtered for the pot and compare.
 
 Note: for the first ~50 ms after start-up the filtered value is still climbing from 0. If that matters, add `HAL_Delay(5)` after starting the DMA in `Init` and pre-fill `filteredX16[i] = dmaBuffer[i] * 16`.
 
-### Step 5: Calibrate to real units
+### Step 5: Channels leaking into each other
+Now the capacitor goes pot → joystick X → joystick Y → light → pot, one after another. Each time it starts from the previous channel's voltage.
+
+1. Keep the light on the photoresistor steady (don't move your hand near it). Log all four raw values.
+2. Push the joystick fully up and down (the Y axis). The light channel (rank 4) is converted right after joystick Y (rank 3). With *480 Cycles*, the light value stays put.
+3. Set every rank to *3 Cycles*, regenerate, and repeat. The light value now follows the joystick a little, because the capacitor is still partly at joystick Y's voltage when the light channel is converted.
+
+The photoresistor module has a high output resistance, so it charges the capacitor slowly and suffers most. That's why Part 2 uses 480 cycles for every channel. Set them back to 480 afterwards.
+
+### Step 6: Calibrate to real units
 
 **Light %:** the photoresistor module's AO usually **rises in the dark**.
 1. Log the filtered light value **covered with your hand**: e.g. `dark = 3600`.
