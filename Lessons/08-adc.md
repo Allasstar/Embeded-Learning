@@ -1,7 +1,7 @@
 # Lesson 08: Analog Sensors (ADC)
 
 ## Goal
-Read the potentiometer, then five analog sensors at once in the background with DMA, filter the readings and convert them to useful units.
+Read the potentiometer, then four analog channels at once in the background with DMA, filter the readings and convert them to useful units.
 
 ## What you learn
 - How an ADC turns a voltage into a number
@@ -29,7 +29,6 @@ volts = raw × 3.3 / 4095
 | Joystick | +5V / GND | **3V** / GND | |
 | Joystick | VRx / VRy | PC1 / PC2 | IN11 / IN12 |
 | Photoresistor | VCC / GND / AO | 3V / GND / PC4 | IN14 |
-| Soil Moisture (comparator board) | VCC / GND / AO | 3V / GND / PC5 | IN15 |
 
 The joystick pin is labelled "+5V", but it's just two potentiometers. Power it from 3V so the outputs stay ≤ 3.3 V.
 
@@ -38,9 +37,30 @@ The joystick pin is labelled "+5V", but it's just two potentiometers. Power it f
 ## Part 1: One channel, polling
 
 ### CubeMX setup
-1. **PA1** → `ADC1_IN1`.
-2. **Analog → ADC1**: IN1 ticked. Parameters: Resolution *12 bits*, Scan *Disabled*, Continuous *Disabled*, Rank 1 → Channel 1, Sampling Time *84 Cycles*.
+1. **PA1** → `ADC1_IN1` (potentiometer). This also ticks **IN1** under *Analog → ADC1*.
+2. **Analog → ADC1 → Parameter Settings**:
+   - Clock Prescaler: *PCLK2 divided by 4*
+   - Resolution: *12 bits*
+   - Data Alignment: *Right alignment*
+   - Scan Conversion Mode: *Disabled*
+   - Continuous Conversion Mode: *Disabled*
+   - Number Of Conversion: `1`
+   - Rank 1 → Channel: *Channel 1*, Sampling Time: *84 Cycles*
 3. Generate.
+
+#### Why each setting
+
+Everything not listed stays at its default.
+
+| Setting | Why |
+|---|---|
+| PA1 → `ADC1_IN1` | Connects the pin to the ADC's input multiplexer and switches it to analog mode (no digital input buffer, no pull resistors), so the pot's voltage reaches the ADC untouched. |
+| Clock Prescaler = PCLK2 / 4 | PCLK2 is 84 MHz. The ADC is only specified up to 36 MHz, so /2 (42 MHz) is too fast. /4 gives 21 MHz. |
+| Resolution = 12 bits | The full resolution: 4096 steps of ~0.8 mV. Lower resolutions convert faster, but nothing here needs speed. |
+| Data Alignment = Right | The result lands in bits 0..11, so the value is just 0..4095 with no shifting. |
+| Scan = Disabled, Number Of Conversion = 1 | Only one channel for now. |
+| Continuous = Disabled | Each `HAL_ADC_Start` does exactly one conversion and stops. You decide when to measure. |
+| Sampling Time = 84 Cycles | How long the ADC's internal capacitor is connected to the pin before converting. 84 cycles (4 µs) is enough for a 10 kΩ pot. Step 2 shows what happens with less and more. |
 
 ### Step 1: Read it
 
@@ -62,21 +82,77 @@ Every 200 ms, log `raw` and `raw * 3300 / 4095` (millivolts, integer maths). Tur
 ### Step 2: See the noise
 Keep the knob still. The last 1–2 digits wobble: that's noise (power supply, the long wires, the ADC itself). Try sampling times of *3 cycles* and *480 cycles*. Longer sampling lets the ADC's internal capacitor charge fully through the sensor's resistance: less noise, slower conversion.
 
-## Part 2: Five channels with DMA
+## Part 2: Four channels with DMA
 
 Polling stops the CPU for each conversion. With **scan mode + DMA**, the ADC converts all channels in sequence, the DMA controller copies each result into an array, and then it starts over, forever, without the CPU. Your code just reads the array.
 
 ### CubeMX setup
-1. Also tick **IN11 (PC1), IN12 (PC2), IN14 (PC4), IN15 (PC5)**.
-2. ADC1 Parameters:
+Keep the Part 1 setup and add to it.
+
+1. Pins (PA1 is already set):
+   - **PC1** → `ADC1_IN11` (joystick VRx)
+   - **PC2** → `ADC1_IN12` (joystick VRy)
+   - **PC4** → `ADC1_IN14` (photoresistor AO)
+
+   *Analog → ADC1* now shows **IN1, IN11, IN12, IN14** ticked.
+2. **ADC1 → Parameter Settings** (change these):
    - Scan Conversion Mode: *Enabled*
    - Continuous Conversion Mode: *Enabled*
    - DMA Continuous Requests: *Enabled*
    - End Of Conversion Selection: *EOC flag at the end of all conversions*
-   - Number Of Conversion: `5`
-   - Rank 1 → Channel 1, Rank 2 → Channel 11, Rank 3 → Channel 12, Rank 4 → Channel 14, Rank 5 → Channel 15. Sampling Time *480 Cycles* for all.
-3. **DMA Settings** tab → Add → `ADC1`. Stream *DMA2 Stream 0*, Mode **Circular**, Data Width *Half Word* / *Half Word*.
-4. Generate. In `main.c` check that `MX_DMA_Init()` is called **before** `MX_ADC1_Init()`. (Some CubeMX versions get this wrong; if so, fix the order in *Project Manager → Advanced Settings*.)
+   - Number Of Conversion: `4`
+   - Ranks, all with Sampling Time *480 Cycles*:
+
+     | Rank | Channel | Part |
+     |---|---|---|
+     | 1 | Channel 1 | Potentiometer |
+     | 2 | Channel 11 | Joystick X |
+     | 3 | Channel 12 | Joystick Y |
+     | 4 | Channel 14 | Photoresistor |
+3. **ADC1 → DMA Settings** tab → *Add* → `ADC1`:
+   - Stream: *DMA2 Stream 0*
+   - Direction: *Peripheral To Memory*
+   - Mode: **Circular**
+   - Increment Address: Peripheral ☐, Memory ☑
+   - Data Width: *Half Word* / *Half Word*
+4. **ADC1 → NVIC Settings**: *DMA2 stream0 global interrupt* is ticked automatically. Leave it on.
+5. Generate. In `main.c` check that `MX_DMA_Init()` is called **before** `MX_ADC1_Init()`. (Some CubeMX versions get this wrong; if so, fix the order in *Project Manager → Advanced Settings*.)
+
+#### Why each setting
+
+**Pins**
+
+| Setting | Why |
+|---|---|
+| PC1 / PC2 / PC4 → `ADC1_IN11` / `IN12` / `IN14` | Each sensor needs its own analog input. These are free pins on the header that ADC1 can reach. |
+
+**ADC1 Parameters**
+
+| Setting | Why |
+|---|---|
+| Scan = Enabled | One start converts every rank in order (1, 2, 3, 4) instead of only rank 1. |
+| Continuous = Enabled | After rank 4 the ADC goes straight back to rank 1, forever. The array is always fresh without you starting anything. |
+| DMA Continuous Requests = Enabled | The ADC keeps asking the DMA to collect results after the first full buffer. Disabled, it stops after one round, which is why the buffer would update only once. |
+| EOC = end of all conversions | The "conversion done" flag means "whole scan done", not "one channel done". The DMA collects each result by itself, so the CPU doesn't need a flag per channel. |
+| Number Of Conversion = 4 | Four channels in the sequence. Must equal `ANALOG_COUNT` in the code. |
+| Rank order | Decides which array slot each channel lands in. The enum in `analog_in.h` must follow the same order. |
+| Sampling Time = 480 Cycles | All channels share one sample capacitor inside the ADC. The photoresistor module has a high output resistance, so the capacitor charges slowly through it. If the sampling time is too short, part of the previous channel's voltage is still on the capacitor and leaks into this one. 480 cycles (23 µs) gives every sensor time to settle. |
+
+**DMA**
+
+| Setting | Why |
+|---|---|
+| DMA2 Stream 0 | ADC1 is hard-wired to DMA2 Stream 0 (or Stream 4) in the chip (RM0090, DMA2 request mapping). |
+| Peripheral To Memory | Data goes from the ADC's result register into your array. |
+| Mode = Circular | After the last array element the DMA wraps back to element 0 and keeps going. *Normal* would stop after one pass. |
+| Increment: Peripheral off, Memory on | The ADC always has one result register, so the source address stays fixed. Each result goes into the next array slot, so the destination moves. |
+| Data Width = Half Word | A 12-bit result fits in 16 bits, and the array is `uint16_t`. *Word* would write 32 bits per slot and overrun the array. |
+
+**NVIC**
+
+| Setting | Why |
+|---|---|
+| DMA2 stream0 global interrupt | HAL uses it to track the transfer (half-complete and complete). CubeMX forces it on with DMA. It's also what challenge 3 is about: it fires twice per scan, all the time. |
 
 ### Step 3: The ADC module
 
@@ -92,7 +168,6 @@ typedef enum
   ANALOG_JOY_X,
   ANALOG_JOY_Y,
   ANALOG_LIGHT,
-  ANALOG_SOIL,
   ANALOG_COUNT
 } AnalogInput;
 
@@ -156,20 +231,18 @@ Note: for the first ~50 ms after start-up the filtered value is still climbing f
 
 ### Step 5: Calibrate to real units
 
-**Soil moisture %:**
-1. Log the filtered soil value with the probe in **dry air**: e.g. `dry = 3600`.
-2. Probe in a **glass of water**: e.g. `wet = 1400`.
-3. `percent = (dry - raw) * 100 / (dry - wet)`, clamped to 0..100.
+**Light %:** the photoresistor module's AO usually **rises in the dark**.
+1. Log the filtered light value **covered with your hand**: e.g. `dark = 3600`.
+2. **Under a lamp**: e.g. `bright = 400`.
+3. `percent = (dark - raw) * 100 / (dark - bright)`, clamped to 0..100.
 
-**Light:** the photoresistor module's AO usually **rises in the dark**. Record "covered with your hand" and "under a lamp" values the same way and map them to 0..100%.
-
-Write these as small functions, e.g. `uint32_t Soil_Percent(void)`.
+The values differ per module, so measure yours. Write it as a small function, e.g. `uint32_t Light_Percent(void)`.
 
 ## Check it works
 - [ ] Pot gives 0 at one end and ~4095 at the other
 - [ ] Joystick centre is ~2000 on both axes and full travel reaches the ends
 - [ ] Filtered values are stable when nothing moves
-- [ ] Soil reads ~0% in air, ~100% in water
+- [ ] Light reads ~0% covered, ~100% under a lamp
 - [ ] The CPU does nothing for the ADC except reading the array
 
 ## Troubleshooting
@@ -185,5 +258,5 @@ Write these as small functions, e.g. `uint32_t Soil_Percent(void)`.
 ## Challenges
 1. Show the pot position as LED brightness (lesson 04).
 2. Measure the chip's **internal temperature sensor** (ADC1 channel *Temperature Sensor*, see RM0090 for the formula).
-3. This setup converts nonstop: ~17 000 DMA interrupts per second for data you read at 1 kHz. Make **TIM8** trigger the conversions instead (External Trigger Conversion Source, Continuous *Disabled*) at 1 kHz.
-4. Add the **water level** sensor as a 6th channel on PB1 (IN9). What changes in the code?
+3. This setup converts nonstop: ~21 000 DMA interrupts per second for data you read at 1 kHz. Make **TIM8** trigger the conversions instead (External Trigger Conversion Source, Continuous *Disabled*) at 1 kHz.
+4. Add the **water level** sensor as a 5th channel on PB1 (IN9). What changes in the code?
