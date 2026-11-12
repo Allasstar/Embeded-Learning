@@ -11,7 +11,7 @@ Twenty lessons, ordered so each one teaches **one new embedded concept** using p
 | 05 | [Buzzer melody](05-buzzer-melody.md) | Changing PWM frequency, preload registers | Passive Buzzer |
 | 06 | [Servo](06-servo.md) | Precise pulse timing, external power | 9G Servo |
 | 07 | [Ultrasonic distance](07-ultrasonic.md) | Input capture, measuring time in hardware | Ultrasonic |
-| 08 | [Analog sensors](08-adc.md) | ADC, polling vs DMA, filtering | Potentiometer, Joystick, Photoresistor, Soil |
+| 08 | [Analog sensors](08-adc.md) | ADC, polling vs DMA, filtering | Potentiometer, Joystick, Photoresistor |
 | 09 | [Joystick → servo](09-joystick-servo.md) | Combining peripherals, calibration, mapping | Joystick, Servo |
 | 10 | [Bluetooth console](10-uart-bluetooth.md) | UART, interrupt RX, ring buffer, command parser | Bluetooth |
 | 11 | [I2C scanner](11-i2c-scanner.md) | I2C bus, addresses, first I2C device | PCF8591, any I2C module |
@@ -115,7 +115,7 @@ This is a per-lesson reference. Lessons never share a build, so two lessons may 
 | 07 | Ultrasonic Echo / Trig | PE9 / PE11 | TIM1_CH1 (input capture) / TIM1_CH2 (PWM) |
 | 08 | Potentiometer | PA1 | ADC1_IN1 |
 | 08 | Joystick X / Y | PC1 / PC2 | ADC1_IN11 / ADC1_IN12 |
-| 08 | Photoresistor AO / Soil AO | PC4 / PC5 | ADC1_IN14 / ADC1_IN15 |
+| 08 | Photoresistor AO | PC4 | ADC1_IN14 |
 | 09 | Joystick SW | PE14 | GPIO_Input, pull-up |
 | 09 | Servo signal | PB14 | TIM12_CH1 |
 | 09 | Joystick X / Y | PC1 / PC2 | ADC1_IN11 / ADC1_IN12 |
